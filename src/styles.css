@@ -1,0 +1,182 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Familjen Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --color-cyc: #d8dce6;
+  --color-ink: #23263a;
+  --color-muted: #5d6378;
+  --color-panel: rgb(243 244 248 / 0.8);
+  --color-line: rgb(35 38 58 / 0.12);
+  --color-cobalt: #2f5bff;
+  --color-marigold: #ffb000;
+  --color-crush: #e5484d;
+}
+
+:root {
+  --stage-ink: #23263a;
+  --stage-muted: #5d6378;
+  color-scheme: light;
+}
+:root[data-scene='night'] {
+  --stage-ink: #eef0f8;
+  --stage-muted: #a7aecb;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #d8dce6;
+  color: #23263a;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+canvas {
+  touch-action: none;
+}
+
+@layer components {
+  .panel {
+    background: var(--color-panel);
+    backdrop-filter: blur(14px) saturate(1.2);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    border: 1px solid var(--color-line);
+  }
+}
+
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-cobalt);
+    outline-offset: 2px;
+  }
+}
+
+/* A hand cursor resting on a control. */
+.hand-hover {
+  outline: 3px solid var(--color-cobalt) !important;
+  outline-offset: 3px;
+}
+
+.subtitle {
+  color: var(--stage-ink);
+  font-size: clamp(2rem, 4.4vw, 4.25rem);
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  text-wrap: balance;
+  max-width: 22ch;
+  transition: color 0.4s;
+}
+.subtitle[data-interim='true'] {
+  opacity: 0.55;
+}
+
+.stage-note {
+  color: var(--stage-muted);
+}
+
+/* Hand cursors */
+.hand-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
+  pointer-events: none;
+  z-index: 60;
+  opacity: 0;
+  transition: opacity 0.2s;
+  will-change: transform;
+}
+.hand-cursor[data-on='true'] {
+  opacity: 1;
+}
+.hand-cursor .ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 3px solid var(--color-cobalt);
+  transform: scale(var(--open, 1));
+  transition: border-color 0.15s, background-color 0.15s;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.6);
+}
+.hand-cursor .dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 999px;
+  background: var(--color-cobalt);
+}
+.hand-cursor .hold {
+  position: absolute;
+  inset: -8px;
+  border-radius: 999px;
+  background: conic-gradient(var(--hold-color, var(--color-crush)) calc(var(--hold, 0) * 1turn), transparent 0);
+  -webkit-mask: radial-gradient(circle, transparent 31px, #000 32px);
+  mask: radial-gradient(circle, transparent 31px, #000 32px);
+}
+.hand-cursor[data-mode='hover'] .ring,
+.hand-cursor[data-mode='ui'] .ring {
+  border-width: 4px;
+}
+.hand-cursor[data-mode='grab'] .ring,
+.hand-cursor[data-mode='stretch'] .ring {
+  border-color: var(--color-marigold);
+  background: rgb(255 176 0 / 0.25);
+}
+.hand-cursor[data-mode='grab'] .dot,
+.hand-cursor[data-mode='stretch'] .dot {
+  background: var(--color-marigold);
+}
+.hand-cursor[data-mode='crush'] .ring {
+  border-color: var(--color-crush);
+}
+.hand-cursor[data-mode='talk'] {
+  --hold-color: var(--color-cobalt);
+}
+
+/* Webcam scan while a real object is being summoned */
+@keyframes scan {
+  from {
+    transform: translateY(-10%);
+  }
+  to {
+    transform: translateY(1000%);
+  }
+}
+.scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 10%;
+  background: linear-gradient(to bottom, transparent, rgb(47 91 255 / 0.55) 70%, #fff);
+  animation: scan 1.1s cubic-bezier(0.5, 0, 0.5, 1) infinite alternate;
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+.breathe {
+  animation: breathe 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scanline,
+  .breathe {
+    animation: none;
+  }
+  .hand-cursor,
+  .hand-cursor .ring {
+    transition: none;
+  }
+}

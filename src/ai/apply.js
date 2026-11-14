@@ -1,0 +1,191 @@
+import { SHAPES, MATERIALS, PHYSICS, BEHAVIORS, PRESETS, GRAVITY } from './schema.js'
+import { useKinex, bodies, newId, dominantColor } from '../store.js'
+
+const DEG = Math.PI / 180
+const MAX_PARTS = 24
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
+const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d)
+const vec = (v, d) => (Array.isArray(v) && v.length >= 3 ? [0, 1, 2].map((i) => num(v[i], d[i])) : d)
+const pick = (v, list, d) => (list.includes(v) ? v : d)
+const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
+const color = (c, d = '#8890A6') => (typeof c === 'string' && HEX.test(c.trim()) ? c.trim() : d)
+
+export function sanitizePart(p = {}) {
+  const size = vec(p.size, [0.5, 0.5, 0.5]).map((n) => clamp(Math.abs(n), 0.03, 8))
+  return {
+    shape: pick(p.shape, SHAPES, 'box'),
+    size,
+    position: vec(p.position, [0, size[1] / 2, 0]).map((n) => clamp(n, -8, 12)),
+    rotation: vec(p.rotation, [0, 0, 0]).map((n) => clamp(n, -720, 720) * DEG),
+    color: color(p.color),
+    material: pick(p.material, MATERIALS, 'plastic'),
+  }
+}
+
+function sanitizeBehavior(b) {
+  if (!b || typeof b !== 'object') return { kind: 'none', speed: 1 }
+  return { kind: pick(b.kind, BEHAVIORS, 'none'), speed: clamp(num(b.speed, 1), 0.1, 4), targetId: b.targetId || null }
+}
+
+// Horizontal footprint radius and height of an object at scale 1.
+export function objectExtent(parts) {
+  let r = 0.3
+  let h = 0.3
+  let minY = Infinity
+  for (const p of parts) {
+    r = Math.max(r, Math.hypot(p.position[0], p.position[2]) + Math.max(p.size[0], p.size[2]) / 2)
+    h = Math.max(h, p.position[1] + p.size[1] / 2)
+    minY = Math.min(minY, p.position[1] - p.size[1] / 2)
+  }
+  return { radius: r, height: h, minY: Number.isFinite(minY) ? minY : 0 }
+}
+
+function currentPos(o) {
+  const b = bodies.get(o.id)
+  if (b) {
+    const t = b.translation()
+    return [t.x, t.y, t.z]
+  }
+  return o.position
+}
+
+// Nudge a spawn point sideways until it doesn't overlap anything already there.
+function freeSpot(pos, radius, objects) {
+  const offsets = [0, 1, -1, 2, -2, 3, -3, 4, -4]
+  for (const k of offsets) {
+    const x = clamp(pos[0] + k * 1.6, -6, 6)
+    const clear = objects.every((o) => {
+      const p = currentPos(o)
+      const r2 = objectExtent(o.parts).radius * o.scale
+      return Math.hypot(p[0] - x, p[2] - pos[2]) > (radius + r2) * 0.9
+    })
+    if (clear) return [x, pos[1], pos[2]]
+  }
+  return pos
+}
+
+function resolveTarget(ref, objects, focusFallback = true) {
+  const { hoverId, heldIds } = useKinex.getState()
+  if (ref) {
+    const r = String(ref).toLowerCase()
+    const exact = objects.find((o) => o.id.toLowerCase() === r)
+    if (exact) return exact
+    const byName = [...objects].reverse().find((o) => o.name.toLowerCase().includes(r) || r.includes(o.name.toLowerCase()))
+    if (byName) return byName
+  }
+  if (!focusFallback) return null
+  const focus = heldIds[0] || hoverId
+  return objects.find((o) => o.id === focus) || objects.at(-1) || null
+}
+
+export function buildObject(a, objects) {
+  const parts = (Array.isArray(a.parts) ? a.parts : []).slice(0, MAX_PARTS).map(sanitizePart)
+  if (!parts.length) parts.push(sanitizePart({ shape: 'box', size: [0.8, 0.8, 0.8], color: '#8890A6' }))
+  // Re-seat the object so its lowest part touches y=0 of its own base.
+  const ext = objectExtent(parts)
+  if (Math.abs(ext.minY) > 0.01) parts.forEach((p) => (p.position[1] -= ext.minY))
+  const physics = pick(a.physics, PHYSICS, 'dynamic')
+  const behavior = sanitizeBehavior(a.behavior)
+  let position = vec(a.position, [0, 0, 0])
+  position = [clamp(position[0], -6.5, 6.5), clamp(position[1], 0, 7), clamp(position[2], -5, 3)]
+  if ((physics === 'float' || behavior.kind === 'float' || behavior.kind === 'orbit') && position[1] < 0.6) position[1] = 1.4
+  const radius = objectExtent(parts).radius
+  if (!behavior.targetId) position = freeSpot(position, radius, objects)
+  const name = String(a.name || 'thing').slice(0, 40)
+  return { id: newId(name), name, position, rotationY: 0, scale: 1, physics, behavior, parts, rev: 0, born: performance.now() }
+}
+
+// Applies validated actions to the world. Returns the ids that were spawned.
+export function applyActions(plan) {
+  const st = useKinex.getState()
+  const actions = Array.isArray(plan?.actions) ? plan.actions.slice(0, 12) : []
+  const spawned = []
+  let delay = 0
+  for (const a of actions) {
+    const objects = [...useKinex.getState().objects, ...spawned]
+    switch (a?.type) {
+      case 'spawn': {
+        const obj = buildObject(a, objects)
+        if (obj.behavior.targetId) {
+          const t = resolveTarget(obj.behavior.targetId, objects, false)
+          obj.behavior.targetId = t ? t.id : null
+          if (t) {
+            const tp = currentPos(t)
+            const d = Math.max(1.6, Math.hypot(obj.position[0] - tp[0], obj.position[2] - tp[2]))
+            const ang = Math.random() * Math.PI * 2
+            obj.position = [tp[0] + Math.cos(ang) * d, Math.max(obj.position[1], tp[1] + 0.6), tp[2] + Math.sin(ang) * d]
+          }
+        }
+        spawned.push(obj)
+        const add = () => useKinex.getState().addObject(obj)
+        delay ? setTimeout(add, delay) : add()
+        delay += 260 + obj.parts.length * 30
+        break
+      }
+      case 'modify': {
+        const o = resolveTarget(a.targetId, objects)
+        if (!o) break
+        const patch = {}
+        if (Number.isFinite(Number(a.scale)) && Number(a.scale) > 0) patch.scale = clamp(o.scale * Number(a.scale), 0.15, 6)
+        if (a.color && HEX.test(a.color)) {
+          const from = dominantColor(o)
+          patch.parts = o.parts.map((p) => (p.color === from ? { ...p, color: a.color } : p))
+        }
+        if (Array.isArray(a.parts) && a.parts.length) {
+          patch.parts = buildObject({ ...a, position: o.position }, []).parts
+        }
+        if (a.physics) patch.physics = pick(a.physics, PHYSICS, o.physics)
+        if (a.behavior) {
+          const b = sanitizeBehavior(a.behavior)
+          if (b.targetId) b.targetId = resolveTarget(b.targetId, objects, false)?.id || null
+          patch.behavior = b
+        }
+        const body = bodies.get(o.id)
+        if (Array.isArray(a.position)) {
+          const p = vec(a.position, o.position)
+          patch.position = [clamp(p[0], -6.5, 6.5), clamp(p[1], 0, 7), clamp(p[2], -5, 3)]
+          body?.setTranslation({ x: patch.position[0], y: patch.position[1] + 0.05, z: patch.position[2] }, true)
+        }
+        if (Number.isFinite(Number(a.rotateY))) {
+          const turn = Number(a.rotateY) * DEG
+          patch.rotationY = (o.rotationY || 0) + turn
+          if (body) {
+            const q = body.rotation()
+            const c = Math.cos(turn / 2)
+            const s = Math.sin(turn / 2)
+            // q' = rotY(turn) * q
+            body.setRotation({ w: c * q.w - s * q.y, x: c * q.x + s * q.z, y: c * q.y + s * q.w, z: c * q.z - s * q.x }, true)
+          }
+        }
+        if (patch.scale && body) {
+          // Lift a growing object so it doesn't spawn into the floor.
+          const t = body.translation()
+          body.setTranslation({ x: t.x, y: Math.max(t.y, 0.02), z: t.z }, true)
+        }
+        st.updateObject(o.id, patch)
+        break
+      }
+      case 'delete': {
+        const o = resolveTarget(a.targetId, objects)
+        if (o) st.removeObject(o.id)
+        break
+      }
+      case 'clear':
+        st.clear()
+        break
+      case 'environment': {
+        const env = useKinex.getState().environment
+        st.set({
+          environment: {
+            preset: pick(a.preset, PRESETS, env.preset),
+            gravity: pick(a.gravity, GRAVITY, env.gravity),
+          },
+        })
+        break
+      }
+      default:
+        break
+    }
+  }
+  return spawned.map((o) => o.id)
+}
