@@ -6,7 +6,7 @@ import { Subtitle } from './ui/Subtitle.jsx'
 import { SceneControls } from './ui/SceneControls.jsx'
 import { HandCursors } from './ui/HandCursors.jsx'
 import { useKinex } from './store.js'
-import { hasGemini } from './ai/gemini.js'
+import { hasLLM } from './ai/llm.js'
 import { toggleListening } from './voice/speech.js'
 
 const typing = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
@@ -51,9 +51,9 @@ export default function App() {
         <div className="pointer-events-auto">
           <SceneControls />
         </div>
-        {!hasGemini && (
+        {!hasLLM && (
           <p className="panel pointer-events-auto max-w-[34ch] rounded-2xl px-4 py-2 text-sm text-muted">
-            Add <code className="font-semibold text-ink">GEMINI_API</code> to <code className="font-semibold text-ink">.env</code> and
+            Add <code className="font-semibold text-ink">OPENAI_API_KEY</code> to <code className="font-semibold text-ink">.env</code> and
             restart to unlock the full builder. The offline builder handles simple shapes until then.
           </p>
         )}

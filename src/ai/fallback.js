@@ -1,4 +1,4 @@
-// Offline builder: keeps the demo alive when Gemini is unreachable.
+// Offline builder: keeps the demo alive when the AI server is unreachable.
 const COLORS = {
   red: '#E5484D', blue: '#2F5BFF', green: '#3FA36B', yellow: '#FFC53D', orange: '#F28C28', purple: '#8E4EC6',
   pink: '#F06AA7', white: '#F4F7FB', black: '#23263A', gold: '#D4A72C', silver: '#B8BFCC', teal: '#12A594', brown: '#8A5A3B',

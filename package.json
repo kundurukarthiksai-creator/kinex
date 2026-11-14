@@ -12,7 +12,6 @@
     "postinstall": "node scripts/vendor-mediapipe.js"
   },
   "dependencies": {
-    "@google/genai": "^3.3.0",
     "@mediapipe/tasks-vision": "^1.2.3",
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",

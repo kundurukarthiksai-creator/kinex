@@ -1,4 +1,4 @@
-import { SHAPES, MATERIALS, PHYSICS, BEHAVIORS, PRESETS, GRAVITY } from './schema.js'
+import { SHAPES, MATERIALS, PHYSICS, BEHAVIORS, PRESETS, GRAVITY, toActions } from './schema.js'
 import { useKinex, bodies, newId, dominantColor } from '../store.js'
 
 const DEG = Math.PI / 180
@@ -98,7 +98,7 @@ export function buildObject(a, objects) {
 // Applies validated actions to the world. Returns the ids that were spawned.
 export function applyActions(plan) {
   const st = useKinex.getState()
-  const actions = Array.isArray(plan?.actions) ? plan.actions.slice(0, 12) : []
+  const actions = toActions(plan).slice(0, 12)
   const spawned = []
   let delay = 0
   for (const a of actions) {

@@ -1,5 +1,5 @@
 import { useKinex, describeScene } from '../store.js'
-import { planFromText, planFromImage, hasGemini } from './gemini.js'
+import { planFromText, planFromImage, hasLLM } from './llm.js'
 import { offlinePlan } from './fallback.js'
 import { applyActions } from './apply.js'
 import { captureFrame } from '../lib/captureFrame.js'
@@ -28,11 +28,11 @@ export async function runCommand(raw) {
   st.setStatus('thinking', 'Building')
   st.set({ narration: '' })
   try {
-    if (!hasGemini) throw new Error('no key')
+    if (!hasLLM) throw new Error('no key')
     finish(await planFromText(text, describeScene()))
   } catch (err) {
-    console.warn('[kinex] gemini failed, using offline builder:', err)
-    const why = hasGemini ? "Gemini didn't answer, so the offline builder took over." : 'No Gemini key in .env, so the offline builder took over.'
+    console.warn('[kinex] model failed, using offline builder:', err)
+    const why = hasLLM ? "The AI didn't answer, so the offline builder took over." : 'No OPENAI_API_KEY in .env, so the offline builder took over.'
     finish(offlinePlan(text), why)
   } finally {
     busy--
@@ -48,8 +48,8 @@ export async function summon() {
     st.setStatus('error', 'Turn on the camera to summon a real object.')
     return
   }
-  if (!hasGemini) {
-    st.setStatus('error', 'Summoning needs a Gemini key in .env.')
+  if (!hasLLM) {
+    st.setStatus('error', 'Summoning needs OPENAI_API_KEY in .env.')
     return
   }
   st.setSubtitle('Summon this', false)
@@ -59,7 +59,7 @@ export async function summon() {
     finish(await planFromImage(frame, describeScene()))
   } catch (err) {
     console.warn('[kinex] summon failed:', err)
-    st.setStatus('error', "Couldn't read the camera frame. Hold the object closer and try again.")
+    st.setStatus('error', "Couldn't recognize that. Hold the object closer, in good light, and try again.")
   } finally {
     st.set({ scanning: false })
   }

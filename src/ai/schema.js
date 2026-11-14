@@ -30,30 +30,59 @@ const behavior = {
   required: ['kind'],
 }
 
-const action = {
+// Separate lists per verb so a spawn can *require* its parts (a flat action type let
+// the model skip them).
+const spawn = {
   type: 'object',
   properties: {
-    type: { type: 'string', enum: ['spawn', 'modify', 'delete', 'clear', 'environment'] },
-    name: { type: 'string', description: 'spawn: short noun, e.g. "castle"' },
-    targetId: { type: 'string', description: 'modify/delete: id of an existing object' },
-    position: { ...vec3, description: 'spawn/modify: where the object base sits, [x, y, z]' },
-    parts: { type: 'array', items: part, description: 'spawn, or modify to rebuild: 1-24 primitives' },
+    name: { type: 'string', description: 'short noun, e.g. "castle"' },
+    position: { ...vec3, description: 'where the object base sits, [x, y, z]' },
     physics: { type: 'string', enum: PHYSICS },
     behavior,
-    scale: { type: 'number', description: 'modify: multiplier on current size, 2 = twice as big' },
-    color: { type: 'string', description: 'modify: recolor the main color of the object' },
-    rotateY: { type: 'number', description: 'modify: turn by degrees around vertical axis' },
-    preset: { type: 'string', enum: PRESETS },
-    gravity: { type: 'string', enum: GRAVITY },
+    parts: { type: 'array', items: part, minItems: 1, maxItems: 24, description: '1-24 primitives composing the object' },
   },
-  required: ['type'],
+  required: ['name', 'position', 'parts'],
+}
+
+const modify = {
+  type: 'object',
+  properties: {
+    targetId: { type: 'string', description: 'id of an existing object' },
+    scale: { type: 'number', description: 'multiplier on current size, 2 = twice as big' },
+    color: { type: 'string', description: 'recolor the main color, hex' },
+    position: { ...vec3, description: 'move the object base to [x, y, z]' },
+    rotateY: { type: 'number', description: 'turn by degrees around the vertical axis' },
+    physics: { type: 'string', enum: PHYSICS },
+    behavior,
+    parts: { type: 'array', items: part, description: 'only when the shape itself must change' },
+  },
+  required: ['targetId'],
 }
 
 export const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
-    narration: { type: 'string', description: 'one short, playful sentence describing what you did' },
-    actions: { type: 'array', items: action },
+    narration: { type: 'string', description: 'one short, warm sentence describing what you did' },
+    spawn: { type: 'array', items: spawn },
+    modify: { type: 'array', items: modify },
+    remove: { type: 'array', items: { type: 'string' }, description: 'ids of objects to delete' },
+    clear: { type: 'boolean', description: 'true to delete everything' },
+    environment: {
+      type: 'object',
+      properties: { preset: { type: 'string', enum: PRESETS }, gravity: { type: 'string', enum: GRAVITY } },
+    },
   },
-  required: ['narration', 'actions'],
+  required: ['narration'],
+}
+
+// Turns a model response into the ordered action list the world understands.
+export function toActions(plan) {
+  if (Array.isArray(plan?.actions)) return plan.actions // offline builder shape
+  const actions = []
+  if (plan?.clear) actions.push({ type: 'clear' })
+  for (const id of plan?.remove || []) actions.push({ type: 'delete', targetId: id })
+  for (const m of plan?.modify || []) actions.push({ ...m, type: 'modify' })
+  for (const s of plan?.spawn || []) actions.push({ ...s, type: 'spawn' })
+  if (plan?.environment && (plan.environment.preset || plan.environment.gravity)) actions.push({ ...plan.environment, type: 'environment' })
+  return actions
 }

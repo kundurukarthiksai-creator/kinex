@@ -2,7 +2,7 @@
 
 **Speak a world into existence, then sculpt it with your bare hands.**
 
-Kinex runs in the browser with nothing but a webcam. You say what you want ("a castle with a red flag", "a solar system") and Gemini acts as an architect: it composes the object out of primitives and it assembles in front of you, piece by piece. Then you reach out and pinch it, throw it, stretch it with two hands, or crush it with your fist. Hold a real object up to the camera, say "summon this", and Kinex builds a 3D copy of it.
+Kinex runs in the browser with nothing but a webcam. You say what you want ("a castle with a red flag", "a solar system") and an LLM acts as an architect: it composes the object out of primitives and it assembles in front of you, piece by piece. Then you reach out and pinch it, throw it, stretch it with two hands, or crush it with your fist. Hold a real object up to the camera, say "summon this", and Kinex builds a 3D copy of it.
 
 No headset. No mouse. No install.
 
@@ -10,26 +10,26 @@ No headset. No mouse. No install.
 
 ```bash
 npm install          # also copies the hand-tracking model into /public for offline use
-cp .env.example .env # then paste your key: GEMINI_API=...
+cp .env.example .env # then paste your key: OPENAI_API_KEY=...
 npm run dev
 ```
 
 Open http://localhost:5173 in **Chrome or Edge** (voice uses the Web Speech API). Allow the camera and microphone.
 
-Get a Gemini key at https://aistudio.google.com/apikey. Without a key, Kinex falls back to an offline builder that knows a few shapes, so the demo never dies on bad Wi-Fi.
+The AI runs on ASU's OpenAI-compatible server (`https://openai.rc.asu.edu/v1`, models `qwen38-27b` and `deepseek-v4-1-flash`). Any OpenAI-compatible server works: set `OPENAI_BASE_URL` and `OPENAI_MODEL`. Without a key, Kinex falls back to an offline builder that knows a few shapes, so the demo never dies on bad Wi-Fi.
 
 ## How to use it
 
 | You do | Kinex does |
 |---|---|
-| Type or say what to build | Gemini composes it from up to 24 primitives, with scene memory ("make it bigger", "put a tree next to the house") |
+| Type or say what to build | The model composes it from up to 24 primitives, with scene memory ("make it bigger", "put a tree next to the house") |
 | **Pinch** an object | Grab it. Move your hand closer to the camera to pull it toward you |
 | **Release** while moving | Throw it. Physics takes over |
 | **Pinch with both hands** | Stretch to scale, twist to turn |
 | **Hold a fist** over an object | Crush it |
 | **Hold a peace sign** | Start talking (hands-free mic) |
 | **Pinch a button** | Click it. The whole UI is touchless |
-| "Summon from camera" / "summon this" | Gemini Vision recognizes what you're holding and builds a replica |
+| "Summon from camera" / "summon this" | The model looks at the camera frame, recognizes what you're holding, and builds a replica |
 | "Turn off gravity", "make it night" | Change the world: Earth, Moon or zero gravity; studio, sunset, dawn or night light |
 | "Export" | Downloads your world as `kinex-world.glb` |
 
@@ -50,16 +50,16 @@ The mouse works too: drag objects to throw them, drag empty space to orbit, scro
 
 - **React + Vite**, **three.js** via React Three Fiber, **Rapier** physics, bloom postprocessing.
 - **MediaPipe HandLandmarker** (two hands, GPU) runs in its own loop and writes into a mutable ref, not React state, so tracking never triggers re-renders. Landmarks pass through a **One Euro filter**. Gestures are normalized by palm size and use **hysteresis**, so pinches don't flicker.
-- **Gemini** returns structured JSON (`responseJsonSchema`): spawn, modify, delete, clear and environment actions. Every response is validated and clamped before it touches the scene. The current scene is sent along, so pronouns and "the red one" resolve.
+- An **OpenAI-compatible LLM** (Qwen / DeepSeek on ASU's server) returns a JSON plan: spawn, modify, remove, clear and environment. Kinex asks for strict JSON-schema output, falls back to JSON mode or plain text if the server doesn't support it, and remembers what worked. Every response is validated and clamped before it touches the scene. The current scene is sent along, so pronouns and "the red one" resolve.
 - Objects are compound rigid bodies with colliders generated from their parts. They stay upright until you throw them hard enough to tumble.
 
 ```
 src/
-  ai/        prompt, schema, Gemini client, action validator, offline builder
+  ai/        prompt, schema, LLM client, action validator, offline builder
   vision/    hand tracker, One Euro filter, gesture classifier (+ tests)
   scene/     stage, objects, parts, hand rig (grab / throw / stretch / crush)
   ui/        command bar, camera picture-in-picture, subtitles, hand cursors
   voice/     speech recognition
 ```
 
-`npm test` runs the gesture classifier tests.
+`npm test` runs the gesture and JSON-parsing tests.

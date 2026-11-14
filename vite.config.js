@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  // GEMINI_API / GEMINI_MODEL from .env are readable as import.meta.env.GEMINI_*
-  envPrefix: ['VITE_', 'GEMINI_'],
+  // OPENAI_API_KEY / OPENAI_MODEL / OPENAI_BASE_URL from .env are readable as import.meta.env.OPENAI_*
+  envPrefix: ['VITE_', 'OPENAI_'],
   test: { environment: 'node' },
 })
