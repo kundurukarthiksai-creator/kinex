@@ -78,6 +78,14 @@ canvas {
   color: var(--stage-muted);
 }
 
+/* Axis letters floating at the ends of the inspected model's axes */
+.axis-label {
+  font-size: 13px;
+  font-weight: 700;
+  text-shadow: 0 0 3px #fff, 0 0 6px #fff;
+  user-select: none;
+}
+
 /* Hand cursors */
 .hand-cursor {
   position: fixed;

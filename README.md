@@ -33,6 +33,23 @@ The AI runs on ASU's OpenAI-compatible server (`https://openai.rc.asu.edu/v1`, m
 | "Turn off gravity", "make it night" | Change the world: Earth, Moon or zero gravity; studio, sunset, dawn or night light |
 | "Export" | Downloads your world as `kinex-world.glb` |
 
+### Inspect: see any model from every side
+
+Double-click a model, press `I`, pinch **Inspect the …**, or say "inspect the castle". The world hides, physics pauses, and the model floats in the studio with its own X / Y / Z axes.
+
+| Do | What happens |
+|---|---|
+| Pinch and drag (one hand) | Tumble the model in any direction |
+| Pinch with both hands | Spread to zoom, twist to roll |
+| Quick pinch or click on a part | Zoom onto that part and see its shape, material, color and size |
+| Axis gizmo (bottom right) | Tap X / Y / Z to look along that axis |
+| Panel: Top / Front / Side / 3⁄4 | Snap the camera |
+| Panel: Turn X / Y / Z ±15° ±90°, or keys `X` `Y` `Z` (Shift reverses) | Rotate on an exact axis |
+| Explode, Spread slider, Wireframe, Spin | See how the model is put together |
+| **Add detail**, or say "add detail" | The AI adds 25–60 small parts (trims, frames, bolts, windows) that stream in while you watch, up to 96 parts |
+| Say "rotate 90 on x", "top view", "explode", "wireframe on" | Instant, no AI round-trip |
+| `Done`, `Esc`, or "done" | Back to the world, unchanged |
+
 The mouse works too: drag objects to throw them, drag empty space to orbit, scroll while holding to push and pull. `/` focuses the input, `M` toggles the mic, and `Delete` removes the hovered object.
 
 ## 90-second demo script
@@ -44,7 +61,8 @@ The mouse works too: drag objects to throw them, drag empty space to orbit, scro
 5. Pinch **Gravity: Off** in the toolbar. Everything floats.
 6. Hold up a mug (or a shoe, a bottle): "Summon this." A 3D copy appears.
 7. Make a fist over the mug to crush it. Peace sign: "Make it night."
-8. "Export." The world downloads as a .glb file.
+8. "Inspect the castle." Turn it on every axis, explode it, then "add detail" and watch it get richer.
+9. "Export." The world (or, in Inspect, just the model) downloads as a .glb file.
 
 ## How it works
 

@@ -1,5 +1,5 @@
 import { RESPONSE_SCHEMA } from './schema.js'
-import { SYSTEM_PROMPT, SUMMON_PROMPT, userPrompt } from './prompt.js'
+import { SYSTEM_PROMPT, SUMMON_PROMPT, REFINE_PROMPT, userPrompt, refinePrompt } from './prompt.js'
 import { parsePartial } from './partialJson.js'
 
 // ASU's OpenAI-compatible server, reached through the Vite proxy (see vite.config.js),
@@ -28,13 +28,13 @@ let working = null
 
 export class LLMError extends Error {}
 
-function body(model, messages, rung) {
+function body(model, messages, rung, maxTokens) {
   return {
     model,
     messages,
     stream: true,
     temperature: 0.7,
-    max_tokens: 4096,
+    max_tokens: maxTokens,
     ...(rung.noThink ? { chat_template_kwargs: { enable_thinking: false, thinking: false } } : {}),
     ...(rung.format === 'json_schema'
       ? { response_format: { type: 'json_schema', json_schema: { name: 'kinex_plan', schema: RESPONSE_SCHEMA } } }
@@ -59,7 +59,7 @@ export function extractJson(text) {
 }
 
 // Streams one completion. onText receives the full text so far after every chunk.
-async function streamOnce(model, messages, rung, onText) {
+async function streamOnce(model, messages, rung, onText, maxTokens) {
   const ctrl = new AbortController()
   let idle = setTimeout(() => ctrl.abort(), IDLE_MS)
   const total = setTimeout(() => ctrl.abort(), TOTAL_MS)
@@ -69,7 +69,7 @@ async function streamOnce(model, messages, rung, onText) {
       method: 'POST',
       signal: ctrl.signal,
       headers: { 'Content-Type': 'application/json', ...(DIRECT_KEY ? { Authorization: `Bearer ${DIRECT_KEY}` } : {}) },
-      body: JSON.stringify(body(model, messages, rung)),
+      body: JSON.stringify(body(model, messages, rung, maxTokens)),
     })
     if (!res.ok) {
       const err = new LLMError(`${res.status} ${(await res.text()).slice(0, 200)}`)
@@ -120,10 +120,10 @@ async function streamOnce(model, messages, rung, onText) {
   }
 }
 
-async function generate(userContent, onPartial) {
+async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTokens = 4096 } = {}) {
   if (!READY) throw new LLMError('No OPENAI_API_KEY in .env.')
   const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: system },
     { role: 'user', content: userContent },
   ]
   const order = working ? [working, ...MODELS.filter((m) => m !== working)] : MODELS
@@ -139,7 +139,7 @@ async function generate(userContent, onPartial) {
         if (onPartial?.(p)) built = true
       }
       try {
-        const text = await streamOnce(model, messages, LADDER[r], onText)
+        const text = await streamOnce(model, messages, LADDER[r], onText, maxTokens)
         const plan = extractJson(text)
         rungFor.set(model, r)
         working = model
@@ -169,4 +169,9 @@ export function planFromImage(base64Jpeg, scene, onPartial) {
     ],
     onPartial,
   )
+}
+
+// Asks for only NEW detail parts for an existing object, streamed like a spawn.
+export function planDetail(obj, onPartial) {
+  return generate(refinePrompt(obj), onPartial, { system: REFINE_PROMPT, maxTokens: 8192 })
 }

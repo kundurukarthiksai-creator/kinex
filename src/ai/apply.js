@@ -4,6 +4,7 @@ import { ASSEMBLY_STAGGER } from '../scene/interaction.js'
 
 const DEG = Math.PI / 180
 const MAX_PARTS = 24
+export const MAX_DETAILED_PARTS = 96
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d)
 const vec = (v, d) => (Array.isArray(v) && v.length >= 3 ? [0, 1, 2].map((i) => num(v[i], d[i])) : d)
@@ -65,7 +66,7 @@ function freeSpot(pos, radius, objects) {
   return pos
 }
 
-function resolveTarget(ref, objects, focusFallback = true) {
+export function resolveTarget(ref, objects, focusFallback = true) {
   const { hoverId, heldIds } = useKinex.getState()
   if (ref) {
     const r = String(ref).toLowerCase()
@@ -245,4 +246,22 @@ function finalizeLive(o, a, objects) {
   const behavior = fin.behavior
   if (behavior.targetId) behavior.targetId = resolveTarget(behavior.targetId, objects.filter((x) => x.id !== o.id), false)?.id || null
   useKinex.getState().updateObject(o.id, { parts, physics: fin.physics, behavior, building: false })
+}
+
+// Streams AI detail parts onto an existing object (Add detail in Inspect).
+// `live.n` counts how many streamed parts were already added. Returns true once any landed.
+export function streamDetail(plan, id, live) {
+  const s = Array.isArray(plan?.spawn) ? plan.spawn[0] : null
+  if (!s || !Array.isArray(s.parts)) return live.n > 0
+  const st = useKinex.getState()
+  const o = st.objects.find((x) => x.id === id)
+  if (!o) return live.n > 0
+  const ready = s.parts.filter(partReady)
+  const room = MAX_DETAILED_PARTS - o.parts.length
+  const fresh = ready.slice(live.n, live.n + Math.max(0, room))
+  if (!fresh.length) return live.n > 0
+  const now = performance.now()
+  live.n += fresh.length
+  st.updateObject(id, { parts: [...o.parts, ...fresh.map((p, k) => ({ ...sanitizePart(p), born: now + k * ASSEMBLY_STAGGER }))] })
+  return true
 }

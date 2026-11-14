@@ -6,6 +6,7 @@ import { useKinex, bodies } from '../store.js'
 import { world } from '../lib/exportGltf.js'
 import { grab, release, liveScale, commitScale, held } from './interaction.js'
 import { toggleListening } from '../voice/speech.js'
+import { viewer, rotateModelAbout, focusPart } from '../lib/viewer.js'
 
 const raycaster = new THREE.Raycaster()
 const ndc = new THREE.Vector2()
@@ -13,6 +14,10 @@ const tmp = new THREE.Vector3()
 const qTurn = new THREE.Quaternion()
 const qBase = new THREE.Quaternion()
 const UP = new THREE.Vector3(0, 1, 0)
+const camRight = new THREE.Vector3()
+const camUp = new THREE.Vector3()
+const camFwd = new THREE.Vector3()
+const TUMBLE = 3.4 // radians of model turn per screen-width of hand travel
 
 const CRUSH_S = 0.5
 const TALK_S = 0.55
@@ -72,6 +77,100 @@ export function HandRig() {
   const mouse = useRef({ present: false, x: 0.5, y: 0.5, down: false, wheel: 0 })
   const stretch = useRef(null)
   const talkCooldown = useRef(0)
+  const twoHand = useRef(null)
+
+  function talkGesture(p, inp, dt, now) {
+    if (inp.victory && !p.locked && now > talkCooldown.current) {
+      p.talkT += dt
+      if (p.talkT >= TALK_S) {
+        toggleListening()
+        p.talkT = 0
+        p.locked = true
+        talkCooldown.current = now + 1200
+      }
+    } else if (!inp.victory) {
+      p.talkT = 0
+      if (!inp.fist) p.locked = false
+    }
+  }
+
+  // Inspect mode: hands turn and zoom the model instead of grabbing things.
+  function inspectFrame(now, dt) {
+    const aspect = window.innerWidth / window.innerHeight
+    const cq = camera.quaternion
+    camRight.set(1, 0, 0).applyQuaternion(cq)
+    camUp.set(0, 1, 0).applyQuaternion(cq)
+    camFwd.set(0, 0, -1).applyQuaternion(cq)
+    const active = []
+    tracker.hands.forEach((h, i) => {
+      const p = pointers.current[i]
+      if (!h.present) {
+        setUiHover(p, null)
+        p.wasPinch = false
+        p.insp = null
+        return
+      }
+      const pinch = h.gesture.pinch
+      const start = pinch && !p.wasPinch
+      const end = !pinch && p.wasPinch
+      p.wasPinch = pinch
+      const el = document.elementFromPoint(h.cursor.x * window.innerWidth, h.cursor.y * window.innerHeight)
+      const ui = p.insp && !p.insp.ui ? null : el?.closest?.('[data-hand]') || null
+      setUiHover(p, ui)
+      if (start) {
+        if (ui) {
+          ui.focus?.()
+          ui.click()
+          p.insp = { ui: true }
+        } else p.insp = { x: h.cursor.x, y: h.cursor.y, moved: 0 }
+      }
+      if (pinch && p.insp && !p.insp.ui) active.push({ h, p })
+      if (end) {
+        // A quick pinch without moving is a tap: zoom to the part under it.
+        if (p.insp && !p.insp.ui && p.insp.moved < 0.02 && world.inspectRoot) {
+          aim(camera, h.cursor.x, h.cursor.y)
+          const hit = raycaster.intersectObject(world.inspectRoot, true).find((x) => x.object.userData?.partIndex !== undefined)
+          if (hit) focusPart(hit.object, hit.object.userData.partIndex)
+        }
+        p.insp = null
+      }
+      talkGesture(p, { victory: h.gesture.victory, fist: h.gesture.fist }, dt, now)
+      h.mode = pinch && p.insp && !p.insp.ui ? 'grab' : h.gesture.victory ? 'talk' : ui ? 'ui' : 'idle'
+      h.hold = h.gesture.victory ? p.talkT / TALK_S : 0
+    })
+
+    if (active.length === 2) {
+      const [a, b] = active
+      const dx = (b.h.cursor.x - a.h.cursor.x) * aspect
+      const dy = b.h.cursor.y - a.h.cursor.y
+      const d = Math.hypot(dx, dy)
+      const ang = Math.atan2(dy, dx)
+      const t = twoHand.current
+      if (t) {
+        const dist = viewer.controls?.distance ?? 6
+        viewer.controls?.dolly((d - t.d) * dist * 2.5, false)
+        let turn = ang - t.ang
+        if (turn > Math.PI) turn -= Math.PI * 2
+        if (turn < -Math.PI) turn += Math.PI * 2
+        rotateModelAbout(camFwd, -turn)
+      }
+      twoHand.current = { d, ang }
+      a.p.insp.moved = b.p.insp.moved = 1
+      a.h.mode = b.h.mode = 'stretch'
+      return
+    }
+    twoHand.current = null
+    if (active.length === 1) {
+      const { h, p } = active[0]
+      const dx = (h.cursor.x - p.insp.x) * aspect
+      const dy = h.cursor.y - p.insp.y
+      p.insp.moved += Math.hypot(dx, dy)
+      p.insp.x = h.cursor.x
+      p.insp.y = h.cursor.y
+      if (dx) rotateModelAbout(camUp, dx * TUMBLE)
+      if (dy) rotateModelAbout(camRight, dy * TUMBLE)
+    }
+  }
 
   // Mouse fallback: drag an object to grab and throw it; drag empty space to orbit.
   useEffect(() => {
@@ -82,6 +181,7 @@ export function HandRig() {
     }
     const down = (e) => {
       if (e.target !== el || e.button !== 0) return
+      if (useKinex.getState().inspectId) return // the camera handles the mouse in Inspect
       const n = toNorm(e)
       Object.assign(mouse.current, n, { present: true })
       if (hitObject(camera, n.x, n.y)) {
@@ -114,6 +214,15 @@ export function HandRig() {
     const now = performance.now()
     const dt = Math.min(delta, 0.05)
     const m = mouse.current
+    if (useKinex.getState().inspectId) {
+      pointers.current.forEach((p) => p.grabId && endGrab(p, now))
+      if (stretch.current) {
+        commitScale(stretch.current.id)
+        stretch.current = null
+      }
+      inspectFrame(now, dt)
+      return
+    }
     const inputs = [
       ...tracker.hands.map((h) => ({
         present: h.present,
@@ -202,15 +311,7 @@ export function HandRig() {
       }
 
       // Hold a victory sign to talk.
-      if (inp.victory && !p.locked && now > talkCooldown.current) {
-        p.talkT += dt
-        if (p.talkT >= TALK_S) {
-          toggleListening()
-          p.talkT = 0
-          p.locked = true
-          talkCooldown.current = now + 1200
-        }
-      } else if (!inp.victory) p.talkT = 0
+      talkGesture(p, inp, dt, now)
 
       if (slot) {
         slot.mode = p.grabId ? 'grab' : inp.fist && hit ? 'crush' : inp.victory ? 'talk' : ui ? 'ui' : hit ? 'hover' : 'idle'
@@ -254,7 +355,7 @@ export function HandRig() {
     })
 
     const st = useKinex.getState()
-    if (st.hoverId !== hoverId) st.set({ hoverId })
+    if (st.hoverId !== hoverId) st.set(hoverId ? { hoverId, lastId: hoverId } : { hoverId })
   })
 
   function endGrab(p, now) {

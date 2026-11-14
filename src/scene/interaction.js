@@ -1,3 +1,4 @@
+import * as THREE from 'three'
 import { useKinex, bodies } from '../store.js'
 
 // Rapier body types
@@ -77,3 +78,7 @@ export function commitScale(id) {
   if (!obj || !m || Math.abs(m - 1) < 0.01) return
   useKinex.getState().updateObject(id, { scale: Math.min(6, Math.max(0.15, obj.scale * m)) })
 }
+
+// Inspect mode: the model's orientation. Everything that turns the model writes
+// targetQ; the view slerps q toward it each frame so turns are animated.
+export const inspectPose = { q: new THREE.Quaternion(), targetQ: new THREE.Quaternion() }

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useKinex } from '../store.js'
 import { runCommand, summon, exportNow } from '../ai/commands.js'
+import { enterInspect } from '../lib/viewer.js'
 import { toggleListening, hasSpeech } from '../voice/speech.js'
 
 const IDEAS = ['a castle with a red flag', 'a solar system', 'a robot with glowing eyes', 'a rocket ready for launch']
@@ -22,6 +23,8 @@ export function CommandBar() {
   const empty = useKinex((s) => s.objects.length === 0)
   const camera = useKinex((s) => s.camera)
   const scanning = useKinex((s) => s.scanning)
+  const inspecting = useKinex((s) => Boolean(s.inspectId))
+  const focus = useKinex((s) => s.objects.find((o) => o.id === s.lastId) || s.objects.at(-1))
 
   const send = (value) => {
     const v = value.trim()
@@ -44,6 +47,18 @@ export function CommandBar() {
               {idea}
             </button>
           ))}
+        </div>
+      )}
+      {!empty && !inspecting && focus && (
+        <div className="flex">
+          <button
+            data-hand
+            onClick={() => enterInspect(focus.id)}
+            className="panel rounded-full px-4 py-2 text-[15px] font-medium text-ink hover:bg-white"
+            title="Look at it from every side (or double-click it, or press I)"
+          >
+            Inspect the {focus.name}
+          </button>
         </div>
       )}
       <form
@@ -76,7 +91,7 @@ export function CommandBar() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === 'Escape' && input.current.blur()}
-          placeholder="Describe something to build"
+          placeholder={inspecting ? 'Change it, or say "add detail"' : 'Describe something to build'}
           autoComplete="off"
           className="h-12 min-w-0 flex-1 bg-transparent px-2 text-lg text-ink outline-none placeholder:text-muted/70"
         />

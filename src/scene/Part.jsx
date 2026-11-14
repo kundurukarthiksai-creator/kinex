@@ -45,7 +45,9 @@ const backOut = (t) => {
 }
 const HOVER = new THREE.Color('#2F5BFF')
 
-export function Part({ part, index, born, hovered }) {
+// `explode` (optional) is a shared {k} the inspector animates; parts then slide away
+// from `center` by k. `wireframe` shows the mesh structure.
+export function Part({ part, index, born, hovered, explode, center, wireframe = false }) {
   const ref = useRef()
   const done = useRef(reduceMotion)
   const material = useMemo(() => makeMaterial(part.color, part.material), [part.color, part.material])
@@ -57,6 +59,15 @@ export function Part({ part, index, born, hovered }) {
     material.emissiveIntensity = hovered ? 0.18 : 0
   }, [hovered, material, part.material])
 
+  useEffect(() => {
+    material.wireframe = wireframe
+  }, [wireframe, material])
+
+  const offset = (k) => {
+    if (!explode || !center || !k) return [0, 0, 0]
+    return [0, 1, 2].map((i) => (part.position[i] - center[i]) * k * 0.6)
+  }
+
   // Transforms are driven imperatively; passing them as props would reset the
   // assembly animation on every re-render.
   useLayoutEffect(() => {
@@ -66,22 +77,29 @@ export function Part({ part, index, born, hovered }) {
       ref.current.scale.setScalar(0.0001)
       return
     }
-    ref.current.position.set(...part.position)
+    const o = offset(explode?.k)
+    ref.current.position.set(part.position[0] + o[0], part.position[1] + o[1], part.position[2] + o[2])
     ref.current.scale.set(...part.size)
   }, [part])
 
   useFrame(() => {
-    if (done.current || !ref.current) return
+    const r = ref.current
+    if (!r) return
+    const o = offset(explode?.k)
+    const [x, y, z] = part.position
+    if (done.current) {
+      if (explode) r.position.set(x + o[0], y + o[1], z + o[2])
+      return
+    }
     const start = part.born ?? born + index * ASSEMBLY_STAGGER
     const t = Math.min(1, Math.max(0, (performance.now() - start) / ASSEMBLY_PART_MS))
     const e = t === 0 ? 0 : backOut(t)
-    const [x, y, z] = part.position
-    ref.current.position.set(x, y + (1 - Math.min(e, 1)) * 1.4, z)
+    r.position.set(x + o[0], y + o[1] + (1 - Math.min(e, 1)) * 1.4, z + o[2])
     const s = Math.max(0.0001, e)
-    ref.current.scale.set(part.size[0] * s, part.size[1] * s, part.size[2] * s)
+    r.scale.set(part.size[0] * s, part.size[1] * s, part.size[2] * s)
     if (t >= 1) {
-      ref.current.position.set(x, y, z)
-      ref.current.scale.set(...part.size)
+      r.position.set(x + o[0], y + o[1], z + o[2])
+      r.scale.set(...part.size)
       done.current = true
     }
   })
@@ -92,6 +110,7 @@ export function Part({ part, index, born, hovered }) {
       geometry={geometryFor(part.shape)}
       material={material}
       rotation={part.rotation}
+      userData={{ partIndex: index }}
       castShadow
       receiveShadow
     />

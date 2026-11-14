@@ -21,6 +21,9 @@ export const useKinex = create((set, get) => ({
   listening: false,
   scanning: false,
   camera: 'off', // off | starting | on | denied
+  lastId: null, // the object you touched or built most recently
+  inspectId: null, // object open in Inspect mode
+  inspect: { explode: 0, wireframe: false, spin: false, focusPart: null, refining: false },
   handsSeen: 0,
   gestures: ['none', 'none'],
 
@@ -28,7 +31,8 @@ export const useKinex = create((set, get) => ({
   setStatus: (kind, text = '') => set({ status: { kind, text } }),
   setSubtitle: (text, interim = false) => set({ subtitle: { text, interim, at: Date.now() } }),
 
-  addObject: (obj) => set((s) => ({ objects: [...s.objects, obj] })),
+  addObject: (obj) => set((s) => ({ objects: [...s.objects, obj], lastId: obj.id })),
+  setInspect: (patch) => set((s) => ({ inspect: { ...s.inspect, ...patch } })),
   updateObject: (id, patch) =>
     set((s) => ({ objects: s.objects.map((o) => (o.id === id ? { ...o, ...patch, rev: (o.rev || 0) + 1 } : o)) })),
   removeObject: (id, withBurst = true) => {
@@ -39,6 +43,7 @@ export const useKinex = create((set, get) => ({
     set((s) => ({
       objects: s.objects.filter((x) => x.id !== id),
       hoverId: s.hoverId === id ? null : s.hoverId,
+      lastId: s.lastId === id ? null : s.lastId,
       bursts: withBurst
         ? [...s.bursts, { id: `b${Date.now()}${Math.random()}`, at: [p.x, p.y + 0.5, p.z], color: dominantColor(o) }]
         : s.bursts,
@@ -62,10 +67,10 @@ export function dominantColor(obj) {
 
 // Compact scene description for the model, so "it", "this" and "the red one" resolve.
 export function describeScene() {
-  const { objects, hoverId, heldIds, environment } = useKinex.getState()
+  const { objects, hoverId, heldIds, environment, inspectId, lastId } = useKinex.getState()
   return {
     environment,
-    focus: heldIds[0] || hoverId || objects.at(-1)?.id || null,
+    focus: inspectId || heldIds[0] || hoverId || lastId || objects.at(-1)?.id || null,
     objects: objects.map((o) => {
       const b = bodies.get(o.id)
       const t = b ? b.translation() : { x: o.position[0], y: o.position[1], z: o.position[2] }

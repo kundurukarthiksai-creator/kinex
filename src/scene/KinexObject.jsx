@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { useKinex, bodies, groups } from '../store.js'
 import { Part } from './Part.jsx'
 import { held, liveScale, homes, desiredType, DYNAMIC } from './interaction.js'
+import { enterInspect } from '../lib/viewer.js'
 
 function PartCollider({ part, scale }) {
   const [w, h, d] = part.size.map((n) => n * scale)
@@ -122,10 +123,21 @@ function KinexObject({ obj }) {
       ccd
       enabledRotations={UPRIGHT}
     >
-      {obj.parts.map((p, i) => (
-        <PartCollider key={`${obj.rev}-${i}`} part={p} scale={obj.scale} />
-      ))}
-      <group ref={group} userData={{ kinexId: obj.id }} name={obj.name}>
+      {obj.parts.map((p, i) =>
+        // Small trims (rivets, window frames) don't need their own colliders.
+        obj.parts.length > 6 && Math.max(...p.size) * obj.scale < 0.15 ? null : (
+          <PartCollider key={`${obj.rev}-${i}`} part={p} scale={obj.scale} />
+        ),
+      )}
+      <group
+        ref={group}
+        userData={{ kinexId: obj.id }}
+        name={obj.name}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          enterInspect(obj.id)
+        }}
+      >
         {obj.parts.map((p, i) => (
           <Part key={i} part={p} index={i} born={obj.born} hovered={hovered} />
         ))}

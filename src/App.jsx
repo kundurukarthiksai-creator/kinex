@@ -8,11 +8,15 @@ import { HandCursors } from './ui/HandCursors.jsx'
 import { useKinex } from './store.js'
 import { hasLLM } from './ai/llm.js'
 import { toggleListening } from './voice/speech.js'
+import { InspectPanel } from './ui/InspectPanel.jsx'
+import { AxisGizmo } from './ui/AxisGizmo.jsx'
+import { enterInspect, exitInspect, rotateModel } from './lib/viewer.js'
 
 const typing = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
 
 export default function App() {
   const preset = useKinex((s) => s.environment.preset)
+  const inspecting = useKinex((s) => Boolean(s.inspectId))
 
   useEffect(() => {
     document.documentElement.dataset.scene = preset
@@ -22,8 +26,16 @@ export default function App() {
     const onKey = (e) => {
       if (typing(document.activeElement)) return
       const st = useKinex.getState()
-      if ((e.key === 'Delete' || e.key === 'Backspace') && st.hoverId) st.removeObject(st.hoverId)
-      if (e.key === 'm' || e.key === 'M') toggleListening()
+      const k = e.key.toLowerCase()
+      if (st.inspectId) {
+        if (k === 'escape') exitInspect()
+        if (k === 'x' || k === 'y' || k === 'z') rotateModel(k, e.shiftKey ? -15 : 15)
+      } else {
+        if ((e.key === 'Delete' || e.key === 'Backspace') && st.hoverId) st.removeObject(st.hoverId)
+        const target = st.hoverId || st.lastId
+        if (k === 'i' && target) enterInspect(target)
+      }
+      if (k === 'm') toggleListening()
       if (e.key === '/') {
         e.preventDefault()
         document.getElementById('kinex-input')?.focus()
@@ -48,10 +60,8 @@ export default function App() {
         <p className="pointer-events-auto text-[26px] font-bold leading-none tracking-[-0.03em]" style={{ color: 'var(--stage-ink)' }}>
           Kinex
         </p>
-        <div className="pointer-events-auto">
-          <SceneControls />
-        </div>
-        {!hasLLM && (
+        <div className="pointer-events-auto">{inspecting ? <InspectPanel /> : <SceneControls />}</div>
+        {!hasLLM && !inspecting && (
           <p className="panel pointer-events-auto max-w-[34ch] rounded-2xl px-4 py-2 text-sm text-muted">
             Add <code className="font-semibold text-ink">OPENAI_API_KEY</code> to <code className="font-semibold text-ink">.env</code> and
             restart to unlock the full builder. The offline builder handles simple shapes until then.
@@ -60,6 +70,7 @@ export default function App() {
       </header>
 
       <CameraPiP />
+      <AxisGizmo />
 
       <section className="pointer-events-none fixed inset-x-4 bottom-4 z-30 flex flex-col gap-5 sm:inset-x-6 sm:bottom-6">
         <div className="pointer-events-none">

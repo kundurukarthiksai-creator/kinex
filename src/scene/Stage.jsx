@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { OrbitControls, Environment, Lightformer } from '@react-three/drei'
+import { CameraControls, Environment, Lightformer } from '@react-three/drei'
 import { Physics, RigidBody, CuboidCollider } from '@react-three/rapier'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import * as THREE from 'three'
@@ -10,6 +10,8 @@ import { Bursts } from './Burst.jsx'
 import { HandRig } from './HandRig.jsx'
 import { world } from '../lib/exportGltf.js'
 import { DYNAMIC } from './interaction.js'
+import { InspectView } from './InspectView.jsx'
+import { viewer } from '../lib/viewer.js'
 
 // The world is a photo-studio cyclorama: floor and backdrop share one color and fog
 // erases the horizon, so every object reads like a product shot.
@@ -97,12 +99,13 @@ function Room() {
 
 function World() {
   const objects = useKinex((s) => s.objects)
+  const inspecting = useKinex((s) => Boolean(s.inspectId))
   const root = useRef()
   useEffect(() => {
     world.root = root.current
   }, [])
   return (
-    <group ref={root} name="kinex-world">
+    <group ref={root} name="world" visible={!inspecting}>
       {objects.map((o) => (
         <KinexObject key={o.id} obj={o} />
       ))}
@@ -110,8 +113,21 @@ function World() {
   )
 }
 
+// Hands the camera and its controls to the viewer module (views, Inspect, gizmo).
+function RegisterViewer() {
+  const { camera, controls } = useThree()
+  useEffect(() => {
+    if (!controls) return
+    viewer.camera = camera
+    viewer.controls = controls
+    controls.setLookAt(0, 4.2, 13, 0, 1.1, 0, false)
+  }, [camera, controls])
+  return null
+}
+
 export default function Stage() {
   const gravity = useKinex((s) => s.environment.gravity)
+  const inspecting = useKinex((s) => Boolean(s.inspectId))
   const floorMat = useRef()
   const hemi = useRef()
   const keyLight = useRef()
@@ -155,25 +171,26 @@ export default function Stage() {
       </mesh>
 
       <Suspense fallback={null}>
-        <Physics gravity={GRAVITY[gravity]}>
+        <Physics gravity={GRAVITY[gravity]} paused={inspecting}>
           <Room />
           <World />
           <HandRig />
         </Physics>
+        <InspectView />
       </Suspense>
       <Bursts />
       <GravityKick />
 
-      <OrbitControls
+      <CameraControls
         makeDefault
-        target={[0, 1.1, 0]}
-        enableDamping
-        dampingFactor={0.08}
         minDistance={5}
         maxDistance={24}
+        minPolarAngle={0.05}
         maxPolarAngle={Math.PI / 2.08}
-        enablePan={false}
+        smoothTime={0.35}
+        draggingSmoothTime={0.12}
       />
+      <RegisterViewer />
       <EffectComposer multisampling={4}>
         <Bloom luminanceThreshold={1} luminanceSmoothing={0.2} intensity={0.9} mipmapBlur />
       </EffectComposer>

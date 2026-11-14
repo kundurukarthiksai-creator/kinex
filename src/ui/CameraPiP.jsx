@@ -8,6 +8,13 @@ const BONES = [
 ]
 const MODE_COLOR = { grab: '#FFB000', stretch: '#FFB000', crush: '#E5484D' }
 
+const INSPECT_GESTURES = [
+  { key: 'pinch', name: 'Pinch and drag', does: 'turn the model' },
+  { key: 'two', name: 'Pinch with both hands', does: 'zoom, twist to roll' },
+  { key: 'tap', name: 'Quick pinch on a part', does: 'zoom to it' },
+  { key: 'victory', name: 'Hold a peace sign', does: 'talk' },
+]
+
 const GESTURES = [
   { key: 'pinch', name: 'Pinch', does: 'grab, release to throw' },
   { key: 'two', name: 'Pinch with both hands', does: 'stretch and turn' },
@@ -22,6 +29,7 @@ export function CameraPiP() {
   const scanning = useKinex((s) => s.scanning)
   const gestures = useKinex((s) => s.gestures)
   const handsSeen = useKinex((s) => s.handsSeen)
+  const inspecting = useKinex((s) => Boolean(s.inspectId))
 
   useEffect(() => {
     startTracker(video.current)
@@ -104,7 +112,7 @@ export function CameraPiP() {
 
       {camera === 'on' && (
         <ul className="panel mt-2 rounded-2xl px-4 py-3 text-sm leading-snug">
-          {GESTURES.map((g) => {
+          {(inspecting ? INSPECT_GESTURES : GESTURES).map((g) => {
             const on = g.key === 'two' ? twoHands : !twoHands && active.has(g.key)
             return (
               <li key={g.key} className={`flex items-baseline gap-2 py-0.5 transition-colors ${on ? 'text-cobalt' : 'text-muted'}`}>

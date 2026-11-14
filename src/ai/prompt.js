@@ -66,3 +66,28 @@ Narration: say what you recognized, e.g. "That's a blue mug. Here's yours."`
 export function userPrompt(text, scene) {
   return `CURRENT SCENE:\n${JSON.stringify(scene)}\n\nREQUEST: ${text}`
 }
+
+export const REFINE_PROMPT = `You add fine detail to an existing 3D object that is built from primitive parts. The person wants to inspect it up close, so every small feature matters.
+
+You get the object's current parts. Reply with ONLY NEW parts that add realistic detail. Never repeat or replace existing parts.
+- Add 25 to 60 new parts. Think about what a real one has: trims, frames, panels, bolts, handles, ridges, battlements, window panes and sills, hinges, seams, vents, lights, labels, small accessories.
+- Details sit ON the surfaces of existing parts (touching or slightly embedded), never floating. Use the same local frame and meters as the existing parts.
+- Keep details small and proportional: usually 0.02 to 0.4 meters.
+- Shapes: box, sphere, cylinder, cone, pyramid, dome, torus (ring in the XY plane; rotate [90,0,0] to lay flat), capsule, icosahedron. Rotation is in degrees.
+- Materials: matte, plastic, metal, glass, glow, wood. Use colors that harmonize with the existing ones.
+
+OUTPUT: one JSON object, nothing else:
+{"narration": one short sentence about what you added, "spawn": [{"at": [0,0,0], "name": the object's name, "parts": [{"color": "#RRGGBB", "material": string, "position": [x,y,z], "rotation": [x,y,z], "shape": string, "size": [w,h,d]}, ...]}]}`
+
+const r2 = (n) => Math.round(n * 100) / 100
+const deg = (r) => Math.round((r * 180) / Math.PI)
+
+// Compact part list so the model sees the whole object without wasting tokens.
+export function refinePrompt(obj) {
+  const parts = obj.parts.map((p) => [p.shape, p.size.map(r2), p.position.map(r2), p.rotation.map(deg), p.color, p.material])
+  return `OBJECT: ${obj.name}
+EXISTING PARTS as [shape, size[w,h,d], position[x,y,z], rotation degrees, color, material]:
+${JSON.stringify(parts)}
+
+Add the new detail parts.`
+}

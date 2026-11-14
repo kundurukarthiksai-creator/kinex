@@ -1,7 +1,8 @@
 import { useKinex, describeScene } from '../store.js'
-import { planFromText, planFromImage, hasLLM } from './llm.js'
+import { planFromText, planFromImage, planDetail, hasLLM } from './llm.js'
 import { offlinePlan } from './fallback.js'
-import { applyActions, streamSpawns } from './apply.js'
+import { applyActions, streamSpawns, streamDetail, resolveTarget, MAX_DETAILED_PARTS } from './apply.js'
+import { enterInspect, exitInspect, snapView, rotateModel, resetModelRotation } from '../lib/viewer.js'
 import { captureFrame } from '../lib/captureFrame.js'
 import { exportWorld } from '../lib/exportGltf.js'
 
@@ -21,8 +22,9 @@ export async function runCommand(raw) {
   st.setSubtitle(text, false)
 
   // Local intents that never need the model.
-  if (/^(export|download|save)( (it|this|the world|world|scene|everything))?\.?$/i.test(text)) return exportNow()
+  if (/^(export|download|save)( (it|this|the world|world|scene|everything|the model|model))?\.?$/i.test(text)) return exportNow()
   if (/\b(summon|scan|copy|replicate) (this|that|it)\b/i.test(text)) return summon()
+  if (inspectIntent(text)) return
 
   busy++
   st.setStatus('thinking', 'Building')
@@ -77,10 +79,99 @@ export async function exportNow() {
   }
   try {
     await exportWorld()
-    st.set({ narration: 'Your world is downloading as kinex-world.glb.' })
+    st.set({ narration: useKinex.getState().inspectId ? 'Your model is downloading as a .glb file.' : 'Your world is downloading as a .glb file.' })
     st.setStatus('done')
   } catch (err) {
     console.error(err)
     st.setStatus('error', 'Export failed. Try again in a second.')
+  }
+}
+
+// Inspect-mode phrases handled locally, so they're instant. Returns true if handled.
+export function inspectIntent(raw) {
+  const t = raw.toLowerCase().replace(/[.!?]+$/, '').trim()
+  const st = useKinex.getState()
+  const inspecting = Boolean(st.inspectId)
+
+  const open = t.match(/^(inspect|examine|look at|zoom in on|open)\b\s*(?:the\s+)?(.*)$/)
+  if (open) {
+    const ref = open[2].replace(/^(it|this|that)$/, '')
+    const target = resolveTarget(ref || null, st.objects)
+    if (!target) {
+      st.setStatus('error', 'Build something first, then inspect it.')
+      return true
+    }
+    enterInspect(target.id)
+    return true
+  }
+  if (!inspecting) return false
+
+  if (/^(done|exit|close|back|leave|stop inspecting|go back)\b/.test(t)) {
+    exitInspect()
+    return true
+  }
+  const view = t.match(/\b(top|front|back|bottom|left|right|side|iso|isometric)\b.*\bview\b|^(?:show (?:the )?)?(top|front|back|bottom|left|right|side)$/)
+  if (view) {
+    snapView((view[1] || view[2]).replace('isometric', 'iso'))
+    return true
+  }
+  const rot = t.match(/\b(?:rotate|turn|spin|flip)\b(?:\s+(?:it|this|the model))?(?:\s+by)?\s*(-?\d+)?\s*(?:deg(?:rees)?|°)?\s*(?:on|around|about|along)?\s*(?:the\s+)?([xyz])(?:[\s-]*axis)?\b/)
+  if (rot) {
+    rotateModel(rot[2], Number(rot[1] || 90))
+    return true
+  }
+  if (/^reset$|\b(reset|straighten)\b.*\b(rotation|orientation|it|model)\b/.test(t)) {
+    resetModelRotation()
+    return true
+  }
+  if (/\b(explode|exploded|take it apart|pull apart|break apart)\b/.test(t)) {
+    st.setInspect({ explode: 1 })
+    return true
+  }
+  if (/\b(assemble|put it back|collapse|unexplode)\b/.test(t)) {
+    st.setInspect({ explode: 0 })
+    return true
+  }
+  const wire = t.match(/\bwire ?frame\b(?:\s+(on|off))?/)
+  if (wire) {
+    st.setInspect({ wireframe: wire[1] ? wire[1] === 'on' : !st.inspect.wireframe })
+    return true
+  }
+  if (/\b(add|more)\b.*\bdetail|\bdetailed\b|\brefine\b/.test(t)) {
+    addDetail()
+    return true
+  }
+  return false
+}
+
+// Streams extra detail parts onto the inspected (or last touched) object.
+export async function addDetail(id) {
+  const st = useKinex.getState()
+  const obj = st.objects.find((o) => o.id === (id || st.inspectId || st.lastId))
+  if (!obj || st.inspect.refining) return
+  if (!hasLLM) {
+    st.setStatus('error', 'Adding detail needs OPENAI_API_KEY in .env.')
+    return
+  }
+  if (obj.parts.length >= MAX_DETAILED_PARTS) {
+    st.setStatus('error', `The ${obj.name} already has as much detail as Kinex can show (${MAX_DETAILED_PARTS} parts).`)
+    return
+  }
+  st.setSubtitle(`More detail on the ${obj.name}`, false)
+  st.set({ narration: '' })
+  st.setStatus('thinking', 'Adding detail')
+  st.setInspect({ refining: true })
+  const live = { n: 0 }
+  try {
+    const plan = await planDetail(obj, (p) => streamDetail(p, obj.id, live))
+    streamDetail(plan, obj.id, live)
+    const total = useKinex.getState().objects.find((o) => o.id === obj.id)?.parts.length ?? 0
+    st.set({ narration: `${plan.narration || 'Added detail.'} Now ${total} parts.` })
+    st.setStatus('done')
+  } catch (err) {
+    console.warn('[kinex] add detail failed:', err)
+    st.setStatus('error', live.n ? `Added ${live.n} details before the AI stopped.` : "The AI didn't answer. Try Add detail again.")
+  } finally {
+    st.setInspect({ refining: false })
   }
 }
