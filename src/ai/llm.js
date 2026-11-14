@@ -1,26 +1,47 @@
 import { RESPONSE_SCHEMA } from './schema.js'
 import { SYSTEM_PROMPT, SUMMON_PROMPT, userPrompt } from './prompt.js'
+import { parsePartial } from './partialJson.js'
 
-// ASU's OpenAI-compatible server. Key and models come from .env.
-const KEY = import.meta.env.OPENAI_API_KEY
-const BASE = (import.meta.env.OPENAI_BASE_URL || 'https://openai.rc.asu.edu/v1').replace(/\/$/, '')
-const MODELS = [...new Set([import.meta.env.OPENAI_MODEL, 'qwen38-27b', 'deepseek-v4-1-flash'].filter(Boolean))]
-const TIMEOUT_MS = { text: 60000, vision: 90000 }
+// ASU's OpenAI-compatible server, reached through the Vite proxy (see vite.config.js),
+// which adds the key from .env. Under tests (no Vite define) it calls the server directly.
+const DIRECT_KEY = typeof __LLM_READY__ === 'undefined' ? globalThis.process?.env?.OPENAI_API_KEY : null
+const READY = typeof __LLM_READY__ === 'undefined' ? Boolean(DIRECT_KEY) : __LLM_READY__
+const BASE = typeof __LLM_BASE__ === 'undefined' ? 'https://openai.rc.asu.edu/v1' : __LLM_BASE__
+const ENV_MODEL = typeof __LLM_MODEL__ === 'undefined' ? '' : __LLM_MODEL__
+// deepseek-v4-1-flash with reasoning off starts writing in ~1s; qwen38-27b is the backup.
+const MODELS = [...new Set([ENV_MODEL, 'deepseek-v4-1-flash', 'qwen38-27b'].filter(Boolean))]
+const IDLE_MS = 20000 // give up if the stream goes quiet this long
+const TOTAL_MS = 120000
 
-export const hasLLM = Boolean(KEY)
+export const hasLLM = READY
 
-// Servers differ in what they accept, so try the strictest output mode first and
-// remember per model which one worked.
-const MODES = ['json_schema', 'json_object', 'plain']
-const modeFor = new Map()
+// Servers differ in what they accept, so start strict and fall back on a 400.
+// Each model remembers the first rung that worked.
+const LADDER = [
+  { format: 'json_schema', noThink: true },
+  { format: 'json_schema', noThink: false },
+  { format: 'json_object', noThink: false },
+  { format: null, noThink: false },
+]
+const rungFor = new Map()
 let working = null
 
 export class LLMError extends Error {}
 
-function responseFormat(mode) {
-  if (mode === 'json_schema') return { type: 'json_schema', json_schema: { name: 'kinex_plan', schema: RESPONSE_SCHEMA } }
-  if (mode === 'json_object') return { type: 'json_object' }
-  return undefined
+function body(model, messages, rung) {
+  return {
+    model,
+    messages,
+    stream: true,
+    temperature: 0.7,
+    max_tokens: 4096,
+    ...(rung.noThink ? { chat_template_kwargs: { enable_thinking: false, thinking: false } } : {}),
+    ...(rung.format === 'json_schema'
+      ? { response_format: { type: 'json_schema', json_schema: { name: 'kinex_plan', schema: RESPONSE_SCHEMA } } }
+      : rung.format === 'json_object'
+        ? { response_format: { type: 'json_object' } }
+        : {}),
+  }
 }
 
 // Pull the JSON object out of whatever the model wrote (reasoning tags, code fences, chatter).
@@ -37,41 +58,70 @@ export function extractJson(text) {
   }
 }
 
-async function post(model, messages, mode, ms) {
+// Streams one completion. onText receives the full text so far after every chunk.
+async function streamOnce(model, messages, rung, onText) {
   const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), ms)
+  let idle = setTimeout(() => ctrl.abort(), IDLE_MS)
+  const total = setTimeout(() => ctrl.abort(), TOTAL_MS)
+  let text = ''
   try {
     const res = await fetch(`${BASE}/chat/completions`, {
       method: 'POST',
       signal: ctrl.signal,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.7,
-        max_tokens: 4096,
-        ...(responseFormat(mode) ? { response_format: responseFormat(mode) } : {}),
-      }),
+      headers: { 'Content-Type': 'application/json', ...(DIRECT_KEY ? { Authorization: `Bearer ${DIRECT_KEY}` } : {}) },
+      body: JSON.stringify(body(model, messages, rung)),
     })
-    const body = await res.text()
     if (!res.ok) {
-      const err = new LLMError(`${res.status} ${body.slice(0, 200)}`)
+      const err = new LLMError(`${res.status} ${(await res.text()).slice(0, 200)}`)
       err.status = res.status
       throw err
     }
-    const data = JSON.parse(body)
-    const msg = data.choices?.[0]?.message || {}
-    return extractJson(msg.content || msg.reasoning_content || '')
+    const reader = res.body.getReader()
+    const dec = new TextDecoder()
+    let buf = ''
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      clearTimeout(idle)
+      idle = setTimeout(() => ctrl.abort(), IDLE_MS)
+      buf += dec.decode(value, { stream: true })
+      let nl
+      let grew = false
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim()
+        buf = buf.slice(nl + 1)
+        if (!line.startsWith('data:')) continue
+        const data = line.slice(5).trim()
+        if (data === '[DONE]') continue
+        try {
+          const delta = JSON.parse(data).choices?.[0]?.delta
+          if (delta?.content) {
+            text += delta.content
+            grew = true
+          }
+        } catch {
+          /* keep-alive or partial line */
+        }
+      }
+      if (grew) onText?.(text)
+    }
+    return text
   } catch (err) {
-    if (err.name === 'AbortError') throw new LLMError('The model took too long to answer.')
+    if (err.name === 'AbortError') {
+      const e = new LLMError('The model took too long to answer.')
+      e.partial = text
+      throw e
+    }
+    err.partial = text
     throw err
   } finally {
-    clearTimeout(t)
+    clearTimeout(idle)
+    clearTimeout(total)
   }
 }
 
-async function generate(userContent, ms) {
-  if (!KEY) throw new LLMError('No OPENAI_API_KEY in .env.')
+async function generate(userContent, onPartial) {
+  if (!READY) throw new LLMError('No OPENAI_API_KEY in .env.')
   const messages = [
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: userContent },
@@ -79,36 +129,44 @@ async function generate(userContent, ms) {
   const order = working ? [working, ...MODELS.filter((m) => m !== working)] : MODELS
   let lastErr
   for (const model of order) {
-    const start = MODES.indexOf(modeFor.get(model) || 'json_schema')
-    for (const mode of MODES.slice(start)) {
+    for (let r = rungFor.get(model) ?? 0; r < LADDER.length; r++) {
+      let built = false // once something is in the scene, never start over on another model
+      let last = null
+      const onText = (t) => {
+        const p = parsePartial(t)
+        if (!p) return
+        last = p
+        if (onPartial?.(p)) built = true
+      }
       try {
-        const plan = await post(model, messages, mode, ms)
-        modeFor.set(model, mode)
+        const text = await streamOnce(model, messages, LADDER[r], onText)
+        const plan = extractJson(text)
+        rungFor.set(model, r)
         working = model
         return plan
       } catch (err) {
         lastErr = err
-        console.warn(`[kinex] ${model} (${mode}) failed:`, String(err.message).slice(0, 200))
+        console.warn(`[kinex] ${model} (rung ${r}) failed:`, String(err.message).slice(0, 200))
+        if (built) return parsePartial(err.partial) || last // keep what already appeared
         if (err.status === 401 || err.status === 403) throw err // bad key: nothing else will work
-        // A 400 usually means this output mode isn't supported: try a looser one.
-        // Anything else (timeout, overload, bad JSON) moves on to the next model.
-        if (err.status !== 400 && !/did not return JSON/.test(err.message)) break
+        // 400 = this request shape isn't supported: try a looser rung. Otherwise next model.
+        if (err.status !== 400) break
       }
     }
   }
   throw lastErr || new LLMError('The model failed.')
 }
 
-export function planFromText(text, scene) {
-  return generate(userPrompt(text, scene), TIMEOUT_MS.text)
+export function planFromText(text, scene, onPartial) {
+  return generate(userPrompt(text, scene), onPartial)
 }
 
-export function planFromImage(base64Jpeg, scene) {
+export function planFromImage(base64Jpeg, scene, onPartial) {
   return generate(
     [
       { type: 'text', text: `${SUMMON_PROMPT}\n\nCURRENT SCENE:\n${JSON.stringify(scene)}` },
       { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Jpeg}` } },
     ],
-    TIMEOUT_MS.vision,
+    onPartial,
   )
 }

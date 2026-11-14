@@ -1,15 +1,15 @@
 import { useKinex, describeScene } from '../store.js'
 import { planFromText, planFromImage, hasLLM } from './llm.js'
 import { offlinePlan } from './fallback.js'
-import { applyActions } from './apply.js'
+import { applyActions, streamSpawns } from './apply.js'
 import { captureFrame } from '../lib/captureFrame.js'
 import { exportWorld } from '../lib/exportGltf.js'
 
 let busy = 0
 
-function finish(plan, note) {
+function finish(plan, note, live) {
   const st = useKinex.getState()
-  applyActions(plan)
+  applyActions(plan, live)
   st.set({ narration: note ? `${note} ${plan.narration || ''}`.trim() : plan.narration || '' })
   st.setStatus('done', '')
 }
@@ -29,7 +29,9 @@ export async function runCommand(raw) {
   st.set({ narration: '' })
   try {
     if (!hasLLM) throw new Error('no key')
-    finish(await planFromText(text, describeScene()))
+    const live = new Map()
+    const plan = await planFromText(text, describeScene(), (p) => streamSpawns(p, live))
+    finish(plan, '', live)
   } catch (err) {
     console.warn('[kinex] model failed, using offline builder:', err)
     const why = hasLLM ? "The AI didn't answer, so the offline builder took over." : 'No OPENAI_API_KEY in .env, so the offline builder took over.'
@@ -56,7 +58,9 @@ export async function summon() {
   st.set({ scanning: true, narration: '' })
   st.setStatus('thinking', 'Scanning')
   try {
-    finish(await planFromImage(frame, describeScene()))
+    const live = new Map()
+    const plan = await planFromImage(frame, describeScene(), (p) => streamSpawns(p, live))
+    finish(plan, '', live)
   } catch (err) {
     console.warn('[kinex] summon failed:', err)
     st.setStatus('error', "Couldn't recognize that. Hold the object closer, in good light, and try again.")

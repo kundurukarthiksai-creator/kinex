@@ -72,7 +72,8 @@ export function Part({ part, index, born, hovered }) {
 
   useFrame(() => {
     if (done.current || !ref.current) return
-    const t = Math.min(1, Math.max(0, (performance.now() - born - index * ASSEMBLY_STAGGER) / ASSEMBLY_PART_MS))
+    const start = part.born ?? born + index * ASSEMBLY_STAGGER
+    const t = Math.min(1, Math.max(0, (performance.now() - start) / ASSEMBLY_PART_MS))
     const e = t === 0 ? 0 : backOut(t)
     const [x, y, z] = part.position
     ref.current.position.set(x, y + (1 - Math.min(e, 1)) * 1.4, z)

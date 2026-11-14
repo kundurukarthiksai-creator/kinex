@@ -15,9 +15,16 @@ export const homes = new Map() // id -> {x,y,z} anchor for behaviors
 
 const getObj = (id) => useKinex.getState().objects.find((o) => o.id === id)
 
+// When the last part finishes its drop-in animation (parts streamed in carry their own born time).
+export function assemblyEnd(obj) {
+  let end = obj.born + assemblyMs(obj)
+  for (const p of obj.parts) if (p.born) end = Math.max(end, p.born + ASSEMBLY_PART_MS)
+  return end
+}
+
 export function desiredType(obj, now = performance.now()) {
   if (held.has(obj.id)) return KINEMATIC
-  if (now - obj.born < assemblyMs(obj)) return KINEMATIC
+  if (obj.building || now < assemblyEnd(obj)) return KINEMATIC
   if (obj.behavior.kind !== 'none' || obj.physics === 'float') return KINEMATIC
   if (obj.physics === 'static') return FIXED
   return DYNAMIC

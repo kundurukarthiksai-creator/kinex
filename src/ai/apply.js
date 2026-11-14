@@ -1,5 +1,6 @@
 import { SHAPES, MATERIALS, PHYSICS, BEHAVIORS, PRESETS, GRAVITY, toActions } from './schema.js'
 import { useKinex, bodies, newId, dominantColor } from '../store.js'
+import { ASSEMBLY_STAGGER } from '../scene/interaction.js'
 
 const DEG = Math.PI / 180
 const MAX_PARTS = 24
@@ -78,12 +79,12 @@ function resolveTarget(ref, objects, focusFallback = true) {
   return objects.find((o) => o.id === focus) || objects.at(-1) || null
 }
 
-export function buildObject(a, objects) {
+export function buildObject(a, objects, { reseat = true } = {}) {
   const parts = (Array.isArray(a.parts) ? a.parts : []).slice(0, MAX_PARTS).map(sanitizePart)
   if (!parts.length) parts.push(sanitizePart({ shape: 'box', size: [0.8, 0.8, 0.8], color: '#8890A6' }))
   // Re-seat the object so its lowest part touches y=0 of its own base.
   const ext = objectExtent(parts)
-  if (Math.abs(ext.minY) > 0.01) parts.forEach((p) => (p.position[1] -= ext.minY))
+  if (reseat && Math.abs(ext.minY) > 0.01) parts.forEach((p) => (p.position[1] -= ext.minY))
   const physics = pick(a.physics, PHYSICS, 'dynamic')
   const behavior = sanitizeBehavior(a.behavior)
   let position = vec(a.position, [0, 0, 0])
@@ -95,16 +96,60 @@ export function buildObject(a, objects) {
   return { id: newId(name), name, position, rotationY: 0, scale: 1, physics, behavior, parts, rev: 0, born: performance.now() }
 }
 
-// Applies validated actions to the world. Returns the ids that were spawned.
-export function applyActions(plan) {
+const partReady = (p) =>
+  p && typeof p.shape === 'string' && Array.isArray(p.size) && p.size.length >= 3 &&
+  Array.isArray(p.position) && p.position.length >= 3 && typeof p.color === 'string' && typeof p.material === 'string'
+
+// Called on every streamed chunk: objects appear as soon as their first part is
+// complete and grow as the model writes more. `live` maps spawn index -> {id, n}.
+// Returns true once anything is in the scene.
+export function streamSpawns(plan, live) {
+  const spawns = Array.isArray(plan?.spawn) ? plan.spawn.slice(0, 12) : []
+  spawns.forEach((s, i) => {
+    if (!s || !Array.isArray(s.parts)) return
+    const ready = s.parts.filter(partReady).slice(0, MAX_PARTS)
+    if (!ready.length) return
+    const st = useKinex.getState()
+    const now = performance.now()
+    const entry = live.get(i)
+    if (!entry) {
+      const at = s.at ?? s.position
+      if (!Array.isArray(at)) return
+      const obj = buildObject({ ...s, position: at, parts: ready, behavior: undefined }, st.objects, { reseat: false })
+      obj.building = true
+      obj.parts = obj.parts.map((p, k) => ({ ...p, born: now + k * ASSEMBLY_STAGGER }))
+      live.set(i, { id: obj.id, n: ready.length })
+      st.addObject(obj)
+    } else if (ready.length > entry.n) {
+      const o = st.objects.find((x) => x.id === entry.id)
+      if (!o) return
+      const fresh = ready.slice(entry.n).map((p, k) => ({ ...sanitizePart(p), born: now + k * ASSEMBLY_STAGGER }))
+      entry.n = ready.length
+      st.updateObject(o.id, { parts: [...o.parts, ...fresh] })
+    }
+  })
+  return live.size > 0
+}
+
+// Applies validated actions to the world. Spawns already streamed in (`live`) are
+// finalized in place instead of being built again.
+export function applyActions(plan, live = new Map()) {
   const st = useKinex.getState()
   const actions = toActions(plan).slice(0, 12)
   const spawned = []
   let delay = 0
+  let spawnIndex = -1
   for (const a of actions) {
     const objects = [...useKinex.getState().objects, ...spawned]
     switch (a?.type) {
       case 'spawn': {
+        spawnIndex++
+        const entry = live.get(spawnIndex)
+        const existing = entry && useKinex.getState().objects.find((o) => o.id === entry.id)
+        if (existing) {
+          finalizeLive(existing, a, objects)
+          break
+        }
         const obj = buildObject(a, objects)
         if (obj.behavior.targetId) {
           const t = resolveTarget(obj.behavior.targetId, objects, false)
@@ -188,4 +233,16 @@ export function applyActions(plan) {
     }
   }
   return spawned.map((o) => o.id)
+}
+
+function finalizeLive(o, a, objects) {
+  // A stream cut short can end mid-part; keep only finished parts.
+  const ready = Array.isArray(a.parts) ? a.parts.filter(partReady) : []
+  const fin = buildObject({ ...a, parts: ready.length ? ready : a.parts, position: o.position }, [], { reseat: true })
+  const now = performance.now()
+  let extra = 0
+  const parts = fin.parts.map((p, k) => ({ ...p, born: o.parts[k]?.born ?? now + extra++ * ASSEMBLY_STAGGER }))
+  const behavior = fin.behavior
+  if (behavior.targetId) behavior.targetId = resolveTarget(behavior.targetId, objects.filter((x) => x.id !== o.id), false)?.id || null
+  useKinex.getState().updateObject(o.id, { parts, physics: fin.physics, behavior, building: false })
 }

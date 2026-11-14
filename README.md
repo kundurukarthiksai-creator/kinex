@@ -16,7 +16,7 @@ npm run dev
 
 Open http://localhost:5173 in **Chrome or Edge** (voice uses the Web Speech API). Allow the camera and microphone.
 
-The AI runs on ASU's OpenAI-compatible server (`https://openai.rc.asu.edu/v1`, models `qwen38-27b` and `deepseek-v4-1-flash`). Any OpenAI-compatible server works: set `OPENAI_BASE_URL` and `OPENAI_MODEL`. Without a key, Kinex falls back to an offline builder that knows a few shapes, so the demo never dies on bad Wi-Fi.
+The AI runs on ASU's OpenAI-compatible server (`https://openai.rc.asu.edu/v1`, models `qwen38-27b` and `deepseek-v4-1-flash`). Any OpenAI-compatible server works: set `OPENAI_BASE_URL` and `OPENAI_MODEL`. The browser reaches the server through Vite's built-in proxy (`/llm`), which adds the key server-side, so run Kinex with `npm run dev` or `npm run preview`, not as static files. Without a key, Kinex falls back to an offline builder that knows a few shapes, so the demo never dies on bad Wi-Fi.
 
 ## How to use it
 
@@ -50,7 +50,7 @@ The mouse works too: drag objects to throw them, drag empty space to orbit, scro
 
 - **React + Vite**, **three.js** via React Three Fiber, **Rapier** physics, bloom postprocessing.
 - **MediaPipe HandLandmarker** (two hands, GPU) runs in its own loop and writes into a mutable ref, not React state, so tracking never triggers re-renders. Landmarks pass through a **One Euro filter**. Gestures are normalized by palm size and use **hysteresis**, so pinches don't flicker.
-- An **OpenAI-compatible LLM** (Qwen / DeepSeek on ASU's server) returns a JSON plan: spawn, modify, remove, clear and environment. Kinex asks for strict JSON-schema output, falls back to JSON mode or plain text if the server doesn't support it, and remembers what worked. Every response is validated and clamped before it touches the scene. The current scene is sent along, so pronouns and "the red one" resolve.
+- An **OpenAI-compatible LLM** (`deepseek-v4-1-flash` with reasoning off, `qwen38-27b` as backup, on ASU's server) **streams** a JSON plan, and a tolerant partial-JSON parser drops each part into the scene the moment it's written, so you watch objects build themselves. The plan has spawn, modify, remove, clear and environment. Kinex asks for strict JSON-schema output, falls back to JSON mode or plain text if the server doesn't support it, and remembers what worked. Every response is validated and clamped before it touches the scene. The current scene is sent along, so pronouns and "the red one" resolve.
 - Objects are compound rigid bodies with colliders generated from their parts. They stay upright until you throw them hard enough to tumble.
 
 ```

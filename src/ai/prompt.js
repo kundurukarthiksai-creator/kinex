@@ -33,7 +33,7 @@ EDITING (scene memory)
 OUTPUT FORMAT: reply with ONE JSON object and nothing else (no prose, no code fences). Omit keys you don't need.
 {
   "narration": string,
-  "spawn": [{ "name": string, "position": [x,y,z], "physics": "dynamic"|"static"|"float",
+  "spawn": [{ "at": [x,y,z] (where the object's base sits), "name": string, "physics": "dynamic"|"static"|"float",
              "behavior": { "kind": "none"|"spin"|"float"|"orbit"|"pulse"|"bounce", "speed": number, "targetId": string },
              "parts": [{ "shape": string, "size": [w,h,d], "position": [x,y,z], "rotation": [x,y,z] degrees, "color": "#RRGGBB", "material": "matte"|"plastic"|"metal"|"glass"|"glow"|"wood" }] }],
   "modify": [{ "targetId": string, "scale": number, "color": "#RRGGBB", "position": [x,y,z], "rotateY": number, "physics": string, "behavior": {...}, "parts": [...] }],
@@ -47,7 +47,7 @@ NARRATION: one short, warm sentence, no emoji. e.g. "A little red rocket, fueled
 
 EXAMPLE
 Request: "a snowman"
-{"narration":"Built you a snowman with a carrot nose.","spawn":[{"name":"snowman","position":[0,0,0],"physics":"dynamic","parts":[
+{"narration":"Built you a snowman with a carrot nose.","spawn":[{"at":[0,0,0],"name":"snowman","physics":"dynamic","parts":[
 {"shape":"sphere","size":[1.2,1.2,1.2],"position":[0,0.6,0],"color":"#F4F7FB","material":"matte"},
 {"shape":"sphere","size":[0.85,0.85,0.85],"position":[0,1.5,0],"color":"#F4F7FB","material":"matte"},
 {"shape":"sphere","size":[0.6,0.6,0.6],"position":[0,2.15,0],"color":"#F4F7FB","material":"matte"},
@@ -59,7 +59,7 @@ Request: "a snowman"
 
 export const SUMMON_PROMPT = `Look at this webcam frame. Identify the main physical object the person is holding up or showing (ignore the person, their face and the room).
 Build a faithful, stylized 3D replica of it as ONE spawn action: match its real colors, proportions and its 2-4 most distinctive features. Use up to 24 parts.
-Name it plainly (e.g. "coffee mug", "water bottle", "sneaker"). Size it so its longest side is 1 to 2 meters, physics "dynamic", position [0,0,0].
+Name it plainly (e.g. "coffee mug", "water bottle", "sneaker"). Size it so its longest side is 1 to 2 meters, physics "dynamic", at [0,0,0].
 If no object is clearly held up, replicate the most prominent object you can see.
 Narration: say what you recognized, e.g. "That's a blue mug. Here's yours."`
 

@@ -32,16 +32,18 @@ const behavior = {
 
 // Separate lists per verb so a spawn can *require* its parts (a flat action type let
 // the model skip them).
+// "at" (not "position") because some servers emit keys alphabetically, and the live
+// builder needs the location before the parts start streaming in.
 const spawn = {
   type: 'object',
   properties: {
+    at: { ...vec3, description: 'where the object base sits, [x, y, z]' },
     name: { type: 'string', description: 'short noun, e.g. "castle"' },
-    position: { ...vec3, description: 'where the object base sits, [x, y, z]' },
     physics: { type: 'string', enum: PHYSICS },
     behavior,
     parts: { type: 'array', items: part, minItems: 1, maxItems: 24, description: '1-24 primitives composing the object' },
   },
-  required: ['name', 'position', 'parts'],
+  required: ['at', 'name', 'parts'],
 }
 
 const modify = {
@@ -82,7 +84,7 @@ export function toActions(plan) {
   if (plan?.clear) actions.push({ type: 'clear' })
   for (const id of plan?.remove || []) actions.push({ type: 'delete', targetId: id })
   for (const m of plan?.modify || []) actions.push({ ...m, type: 'modify' })
-  for (const s of plan?.spawn || []) actions.push({ ...s, type: 'spawn' })
+  for (const s of plan?.spawn || []) actions.push({ ...s, position: s.at ?? s.position, type: 'spawn' })
   if (plan?.environment && (plan.environment.preset || plan.environment.gravity)) actions.push({ ...plan.environment, type: 'environment' })
   return actions
 }

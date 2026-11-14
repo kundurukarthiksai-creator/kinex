@@ -21,7 +21,7 @@ describe('toActions', () => {
   it('orders clear, remove, modify, spawn, environment', () => {
     const a = toActions({
       narration: 'x',
-      spawn: [{ name: 'tree', position: [0, 0, 0], parts: [] }],
+      spawn: [{ at: [1, 0, 2], name: 'tree', parts: [] }],
       modify: [{ targetId: 'a', scale: 2 }],
       remove: ['b'],
       clear: true,
@@ -31,5 +31,11 @@ describe('toActions', () => {
   })
   it('passes the offline builder shape through', () => {
     expect(toActions({ actions: [{ type: 'clear' }] })).toEqual([{ type: 'clear' }])
+  })
+})
+
+describe('spawn location', () => {
+  it('maps "at" to position', () => {
+    expect(toActions({ spawn: [{ at: [1, 0, 2], name: 'x', parts: [] }] })[0].position).toEqual([1, 0, 2])
   })
 })
