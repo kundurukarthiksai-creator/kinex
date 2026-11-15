@@ -24,6 +24,9 @@ export const useKinex = create((set, get) => ({
   lastId: null, // the object you touched or built most recently
   inspectId: null, // object open in Inspect mode
   inspect: { explode: 0, wireframe: false, spin: false, focusPart: null, refining: false },
+  // HD meshes by object id: { status: image|queued|meshing|ready|failed, stage, progress,
+  // queue, image (data URL it is built from), url (GLB blob URL), startedAt, error, show }
+  hd: {},
   handsSeen: 0,
   gestures: ['none', 'none'],
 
@@ -33,6 +36,7 @@ export const useKinex = create((set, get) => ({
 
   addObject: (obj) => set((s) => ({ objects: [...s.objects, obj], lastId: obj.id })),
   setInspect: (patch) => set((s) => ({ inspect: { ...s.inspect, ...patch } })),
+  setHD: (id, patch) => set((s) => ({ hd: { ...s.hd, [id]: { ...s.hd[id], ...patch } } })),
   updateObject: (id, patch) =>
     set((s) => ({ objects: s.objects.map((o) => (o.id === id ? { ...o, ...patch, rev: (o.rev || 0) + 1 } : o)) })),
   removeObject: (id, withBurst = true) => {

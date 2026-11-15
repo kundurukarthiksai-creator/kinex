@@ -7,6 +7,7 @@ import { Part } from './Part.jsx'
 import { inspectPose } from './interaction.js'
 import { partsBounds, inspectAnchor, focusPart, rotateModelAbout } from '../lib/viewer.js'
 import { world } from '../lib/exportGltf.js'
+import { HDModel } from '../hd/HDModel.jsx'
 
 const UP = new THREE.Vector3(0, 1, 0)
 const AXIS_COLORS = { x: '#E5484D', y: '#3FA36B', z: '#2F5BFF' }
@@ -56,6 +57,11 @@ function InspectModel({ obj }) {
   const wireframe = useKinex((s) => s.inspect.wireframe)
   const spin = useKinex((s) => s.inspect.spin)
   const focused = useKinex((s) => s.inspect.focusPart)
+  const hdUrl = useKinex((s) => {
+    const h = s.hd[obj.id]
+    return h?.status === 'ready' && h.show !== false ? h.url : null
+  })
+  const hdFormat = useKinex((s) => s.hd[obj.id]?.format || 'glb')
   const ex = useRef({ k: 0 })
   const bounds = useMemo(() => partsBounds(obj.parts), [obj.parts])
   const anchor = useMemo(() => inspectAnchor(obj), [obj])
@@ -91,7 +97,8 @@ function InspectModel({ obj }) {
     <group ref={outer} onClick={onClick}>
       <group ref={model} scale={obj.scale} name={obj.name}>
         <group position={bounds.center.map((v) => -v)}>
-          {obj.parts.map((p, i) => (
+          {hdUrl && <HDModel url={hdUrl} format={hdFormat} parts={obj.parts} wireframe={wireframe} />}
+          {!hdUrl && obj.parts.map((p, i) => (
             <Part
               key={i}
               part={p}

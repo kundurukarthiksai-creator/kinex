@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Stage from './scene/Stage.jsx'
 import { CameraPiP } from './ui/CameraPiP.jsx'
 import { CommandBar } from './ui/CommandBar.jsx'
@@ -10,6 +10,8 @@ import { hasLLM } from './ai/llm.js'
 import { toggleListening } from './voice/speech.js'
 import { InspectPanel } from './ui/InspectPanel.jsx'
 import { AxisGizmo } from './ui/AxisGizmo.jsx'
+import { HDTray } from './ui/HDTray.jsx'
+import { importModelFile } from './hd/importModel.js'
 import { enterInspect, exitInspect, rotateModel } from './lib/viewer.js'
 
 const typing = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
@@ -17,6 +19,34 @@ const typing = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA
 export default function App() {
   const preset = useKinex((s) => s.environment.preset)
   const inspecting = useKinex((s) => Boolean(s.inspectId))
+  const [dragging, setDragging] = useState(false)
+
+  // Drop any 3D file onto the page to view it.
+  useEffect(() => {
+    const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files')
+    const over = (e) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      setDragging(true)
+    }
+    const leave = (e) => {
+      if (e.relatedTarget === null) setDragging(false)
+    }
+    const drop = (e) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      setDragging(false)
+      ;[...e.dataTransfer.files].forEach((f) => importModelFile(f))
+    }
+    window.addEventListener('dragover', over)
+    window.addEventListener('dragleave', leave)
+    window.addEventListener('drop', drop)
+    return () => {
+      window.removeEventListener('dragover', over)
+      window.removeEventListener('dragleave', leave)
+      window.removeEventListener('drop', drop)
+    }
+  }, [])
 
   useEffect(() => {
     document.documentElement.dataset.scene = preset
@@ -71,6 +101,7 @@ export default function App() {
 
       <CameraPiP />
       <AxisGizmo />
+      <HDTray />
 
       <section className="pointer-events-none fixed inset-x-4 bottom-4 z-30 flex flex-col gap-5 sm:inset-x-6 sm:bottom-6">
         <div className="pointer-events-none">
@@ -81,6 +112,11 @@ export default function App() {
         </div>
       </section>
 
+      {dragging && (
+        <div className="pointer-events-none fixed inset-4 z-50 grid place-items-center rounded-[28px] border-2 border-dashed border-cobalt bg-white/40">
+          <p className="panel rounded-2xl px-6 py-4 text-xl font-semibold text-ink">Drop a .glb, .gltf, .obj or .stl file to view it</p>
+        </div>
+      )}
       <HandCursors />
     </main>
   )

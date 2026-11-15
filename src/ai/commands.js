@@ -5,12 +5,23 @@ import { applyActions, streamSpawns, streamDetail, resolveTarget, MAX_DETAILED_P
 import { enterInspect, exitInspect, snapView, rotateModel, resetModelRotation } from '../lib/viewer.js'
 import { captureFrame } from '../lib/captureFrame.js'
 import { exportWorld } from '../lib/exportGltf.js'
+import { makeHD } from '../hd/meshes.js'
 
 let busy = 0
 
-function finish(plan, note, live) {
+// Remember what each new object was made from: the words for HD image prompts,
+// the camera frame for Summon. Objects from earlier commands already have one.
+function tagNew(source) {
+  for (const o of useKinex.getState().objects) if (!o.source) o.source = source
+}
+
+function finish(plan, note, live, source) {
   const st = useKinex.getState()
   applyActions(plan, live)
+  if (source) {
+    tagNew(source)
+    setTimeout(() => tagNew(source), 4000) // multi-object spawns land staggered
+  }
   st.set({ narration: note ? `${note} ${plan.narration || ''}`.trim() : plan.narration || '' })
   st.setStatus('done', '')
 }
@@ -25,6 +36,12 @@ export async function runCommand(raw) {
   if (/^(export|download|save)( (it|this|the world|world|scene|everything|the model|model))?\.?$/i.test(text)) return exportNow()
   if (/\b(summon|scan|copy|replicate) (this|that|it)\b/i.test(text)) return summon()
   if (inspectIntent(text)) return
+  if (/\bmake (it|this|that|the \w+) (hd|real|realistic|high.?def(inition)?)\b|\b(hd|realistic) (version|model)\b/i.test(text)) {
+    const target = resolveTarget(text.match(/the (\w+) (hd|real)/i)?.[1] || null, st.objects)
+    if (target) makeHD(target.id)
+    else st.setStatus('error', 'Build something first, then make it HD.')
+    return
+  }
 
   busy++
   st.setStatus('thinking', 'Building')
@@ -33,7 +50,7 @@ export async function runCommand(raw) {
     if (!hasLLM) throw new Error('no key')
     const live = new Map()
     const plan = await planFromText(text, describeScene(), (p) => streamSpawns(p, live))
-    finish(plan, '', live)
+    finish(plan, '', live, { text })
   } catch (err) {
     console.warn('[kinex] model failed, using offline builder:', err)
     const why = hasLLM ? "The AI didn't answer, so the offline builder took over." : 'No OPENAI_API_KEY in .env, so the offline builder took over.'
@@ -62,7 +79,7 @@ export async function summon() {
   try {
     const live = new Map()
     const plan = await planFromImage(frame, describeScene(), (p) => streamSpawns(p, live))
-    finish(plan, '', live)
+    finish(plan, '', live, { text: 'summon', photo: `data:image/jpeg;base64,${frame}` })
   } catch (err) {
     console.warn('[kinex] summon failed:', err)
     st.setStatus('error', "Couldn't recognize that. Hold the object closer, in good light, and try again.")

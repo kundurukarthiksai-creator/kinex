@@ -1,0 +1,42 @@
+import * as THREE from 'three'
+import { useKinex } from '../store.js'
+import { buildObject } from '../ai/apply.js'
+import { loadModel } from './HDModel.jsx'
+
+export const IMPORT_EXTENSIONS = ['glb', 'gltf', 'obj', 'stl']
+const LONGEST_SIDE = 2.2 // meters in the world; Inspect lets you zoom in
+
+// Brings any 3D file into the world as a model you can grab, throw and inspect.
+// The physics body is a box around the mesh; the mesh itself is what you see.
+export async function importModelFile(file) {
+  const st = useKinex.getState()
+  const ext = file.name.split('.').pop().toLowerCase()
+  if (!IMPORT_EXTENSIONS.includes(ext)) {
+    st.setStatus('error', `Kinex opens .glb, .gltf, .obj and .stl files. ${file.name} is a .${ext} file.`)
+    return
+  }
+  const format = ext === 'gltf' ? 'glb' : ext
+  const url = URL.createObjectURL(file)
+  const name = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 40) || 'model'
+  st.setStatus('thinking', `Opening ${file.name}`)
+  try {
+    const scene = await loadModel(url, format)
+    const size = new THREE.Box3().setFromObject(scene).getSize(new THREE.Vector3())
+    const k = LONGEST_SIDE / Math.max(size.x, size.y, size.z, 1e-6)
+    const [w, h, d] = [size.x * k, size.y * k, size.z * k].map((v) => Math.max(v, 0.05))
+    const obj = buildObject(
+      { name, position: [0, 0, 0], physics: 'dynamic', parts: [{ shape: 'box', size: [w, h, d], position: [0, h / 2, 0], color: '#B8BFCC', material: 'matte' }] },
+      st.objects,
+    )
+    obj.source = { text: name, file: file.name }
+    st.setHD(obj.id, { status: 'ready', url, format, name, image: null, progress: 100, imported: true, dismissed: true })
+    st.addObject(obj)
+    st.set({ narration: `Opened ${file.name}. Double-click it to inspect from every side.` })
+    st.setStatus('done')
+    return obj.id
+  } catch (err) {
+    console.warn('[kinex] import failed', err)
+    URL.revokeObjectURL(url)
+    st.setStatus('error', `Couldn't read ${file.name}. Is it a valid ${ext.toUpperCase()} file?`)
+  }
+}

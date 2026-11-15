@@ -6,6 +6,7 @@ import { useKinex, bodies, groups } from '../store.js'
 import { Part } from './Part.jsx'
 import { held, liveScale, homes, desiredType, DYNAMIC } from './interaction.js'
 import { enterInspect } from '../lib/viewer.js'
+import { HDModel } from '../hd/HDModel.jsx'
 
 function PartCollider({ part, scale }) {
   const [w, h, d] = part.size.map((n) => n * scale)
@@ -42,6 +43,11 @@ function KinexObject({ obj }) {
   const body = useRef()
   const group = useRef()
   const hovered = useKinex((s) => s.hoverId === obj.id)
+  const hdUrl = useKinex((s) => {
+    const h = s.hd[obj.id]
+    return h?.status === 'ready' && h.show !== false ? h.url : null
+  })
+  const hdFormat = useKinex((s) => s.hd[obj.id]?.format || 'glb')
   const objRef = useRef(obj)
   objRef.current = obj
 
@@ -138,9 +144,10 @@ function KinexObject({ obj }) {
           enterInspect(obj.id)
         }}
       >
-        {obj.parts.map((p, i) => (
-          <Part key={i} part={p} index={i} born={obj.born} hovered={hovered} />
-        ))}
+        {(() => {
+          const blocks = obj.parts.map((p, i) => <Part key={i} part={p} index={i} born={obj.born} hovered={hovered} />)
+          return hdUrl ? <HDModel url={hdUrl} format={hdFormat} parts={obj.parts} fallback={blocks} /> : blocks
+        })()}
       </group>
     </RigidBody>
   )

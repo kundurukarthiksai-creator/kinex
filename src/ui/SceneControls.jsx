@@ -1,4 +1,6 @@
+import { useRef } from 'react'
 import { useKinex } from '../store.js'
+import { importModelFile, IMPORT_EXTENSIONS } from '../hd/importModel.js'
 
 const GRAVITY = [
   ['normal', 'Earth'],
@@ -38,10 +40,29 @@ export function SceneControls() {
   const set = useKinex((s) => s.set)
   const count = useKinex((s) => s.objects.length)
   const clear = useKinex((s) => s.clear)
+  const file = useRef()
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Segmented label="Gravity" options={GRAVITY} value={env.gravity} onPick={(gravity) => set({ environment: { ...env, gravity } })} />
       <Segmented label="Light" options={LIGHT} value={env.preset} onPick={(preset) => set({ environment: { ...env, preset } })} />
+      <button
+        data-hand
+        onClick={() => file.current.click()}
+        className="panel rounded-full px-4 py-2 text-sm font-medium text-ink hover:bg-white"
+        title="Open a .glb, .gltf, .obj or .stl file (or drop one on the page)"
+      >
+        Open 3D file
+      </button>
+      <input
+        ref={file}
+        type="file"
+        accept={IMPORT_EXTENSIONS.map((e) => `.${e}`).join(',')}
+        className="hidden"
+        onChange={(e) => {
+          ;[...e.target.files].forEach((f) => importModelFile(f))
+          e.target.value = ''
+        }}
+      />
       {count > 0 && (
         <button data-hand onClick={clear} className="panel rounded-full px-4 py-2 text-sm font-medium text-ink hover:bg-white">
           Clear all

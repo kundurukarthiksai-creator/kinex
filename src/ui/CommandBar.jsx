@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useKinex } from '../store.js'
 import { runCommand, summon, exportNow } from '../ai/commands.js'
 import { enterInspect } from '../lib/viewer.js'
+import { makeHD } from '../hd/meshes.js'
 import { toggleListening, hasSpeech } from '../voice/speech.js'
 
 const IDEAS = ['a castle with a red flag', 'a solar system', 'a robot with glowing eyes', 'a rocket ready for launch']
@@ -25,6 +26,7 @@ export function CommandBar() {
   const scanning = useKinex((s) => s.scanning)
   const inspecting = useKinex((s) => Boolean(s.inspectId))
   const focus = useKinex((s) => s.objects.find((o) => o.id === s.lastId) || s.objects.at(-1))
+  const focusHD = useKinex((s) => (focus ? s.hd[focus.id]?.status : null))
 
   const send = (value) => {
     const v = value.trim()
@@ -50,7 +52,7 @@ export function CommandBar() {
         </div>
       )}
       {!empty && !inspecting && focus && (
-        <div className="flex">
+        <div className="flex flex-wrap gap-2">
           <button
             data-hand
             onClick={() => enterInspect(focus.id)}
@@ -59,6 +61,16 @@ export function CommandBar() {
           >
             Inspect the {focus.name}
           </button>
+          {(!focusHD || focusHD === 'failed') && (
+            <button
+              data-hand
+              onClick={() => makeHD(focus.id)}
+              className="panel rounded-full px-4 py-2 text-[15px] font-medium text-ink hover:bg-white"
+              title="Generate a real textured 3D model with AI. Takes a few minutes; you can keep building."
+            >
+              Make the {focus.name} HD
+            </button>
+          )}
         </div>
       )}
       <form

@@ -2,6 +2,7 @@ import { useKinex } from '../store.js'
 import { exitInspect, snapView, rotateModel, resetModelRotation, partsBounds } from '../lib/viewer.js'
 import { addDetail } from '../ai/commands.js'
 import { MAX_DETAILED_PARTS } from '../ai/apply.js'
+import { makeHD } from '../hd/meshes.js'
 
 const AXES = [
   ['x', '#E5484D'],
@@ -45,7 +46,12 @@ export function InspectPanel() {
   const obj = useKinex((s) => s.objects.find((o) => o.id === s.inspectId))
   const inspect = useKinex((s) => s.inspect)
   const setInspect = useKinex((s) => s.setInspect)
+  const hd = useKinex((s) => (obj ? s.hd[obj.id] : null))
+  const setHD = useKinex((s) => s.setHD)
   if (!obj) return null
+  const hdReady = hd?.status === 'ready'
+  const hdBusy = hd && !hdReady && hd.status !== 'failed'
+  const showingHD = hdReady && hd.show !== false
 
   const b = partsBounds(obj.parts)
   const [w, h, d] = b.size.map((v) => v * obj.scale)
@@ -57,7 +63,7 @@ export function InspectPanel() {
       <div>
         <h2 className="text-2xl font-semibold leading-tight tracking-[-0.02em] text-ink first-letter:uppercase">{obj.name}</h2>
         <p className="text-sm text-muted">
-          {obj.parts.length} parts, {fmt(w)} × {fmt(h)} × {fmt(d)} m
+          {showingHD ? 'HD model' : `${obj.parts.length} ${obj.parts.length === 1 ? 'part' : 'parts'}`}, {fmt(w)} × {fmt(h)} × {fmt(d)} m
         </p>
       </div>
 
@@ -95,7 +101,12 @@ export function InspectPanel() {
       ))}
 
       <Row label="Show">
-        <Btn active={inspect.explode > 0} onClick={() => setInspect({ explode: inspect.explode > 0 ? 0 : 1 })}>
+        <Btn
+          active={inspect.explode > 0}
+          disabled={showingHD}
+          onClick={() => setInspect({ explode: inspect.explode > 0 ? 0 : 1 })}
+          className="disabled:opacity-40"
+        >
           Explode
         </Btn>
         <Btn active={inspect.wireframe} onClick={() => setInspect({ wireframe: !inspect.wireframe })}>
@@ -134,13 +145,31 @@ export function InspectPanel() {
         </div>
       )}
 
+      <div className="flex items-center gap-2">
+        {hdReady ? (
+          <Btn active={showingHD} onClick={() => setHD(obj.id, { show: !showingHD })}>
+            {showingHD ? 'Showing HD model' : 'Show HD model'}
+          </Btn>
+        ) : (
+          <button
+            data-hand
+            onClick={() => makeHD(obj.id)}
+            disabled={hdBusy}
+            className="h-10 flex-1 rounded-2xl border border-ink/20 px-4 font-semibold text-ink transition-opacity hover:bg-white disabled:opacity-50"
+            title="Generate a real textured 3D model with AI. Takes a few minutes."
+          >
+            {hdBusy ? 'Making the HD model…' : hd?.status === 'failed' ? 'Try HD again' : 'Make it HD'}
+          </button>
+        )}
+      </div>
+
       <div className="flex gap-2 pt-1">
         <button
           data-hand
           onClick={() => addDetail(obj.id)}
-          disabled={inspect.refining || full}
+          disabled={inspect.refining || full || showingHD}
           className="h-11 flex-1 rounded-2xl bg-ink px-4 font-semibold text-white transition-opacity disabled:opacity-40"
-          title={full ? `Up to ${MAX_DETAILED_PARTS} parts` : 'The AI adds small details while you watch'}
+          title={showingHD ? 'Switch to the block model to add detail' : full ? `Up to ${MAX_DETAILED_PARTS} parts` : 'The AI adds small details while you watch'}
         >
           {inspect.refining ? 'Adding detail…' : full ? 'Fully detailed' : 'Add detail'}
         </button>
