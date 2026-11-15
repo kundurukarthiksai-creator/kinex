@@ -18,6 +18,21 @@ Open http://localhost:5173 in **Chrome or Edge** (voice uses the Web Speech API)
 
 The AI runs on ASU's OpenAI-compatible server (`https://openai.rc.asu.edu/v1`, models `qwen38-27b` and `deepseek-v4-1-flash`). Any OpenAI-compatible server works: set `OPENAI_BASE_URL` and `OPENAI_MODEL`. The browser reaches the server through Vite's built-in proxy (`/llm`), which adds the key server-side, so run Kinex with `npm run dev` or `npm run preview`, not as static files. Without a key, Kinex falls back to an offline builder that knows a few shapes, so the demo never dies on bad Wi-Fi.
 
+## Remodel a real house by chat
+
+Press **Open sample house** (or open your own `.ifc` building file). Kinex reads the real model, with every wall, door, window, floor, roof, stair, piece of furniture and room, plus which floor each is on, which walls are exterior or load-bearing, which wall each door and window sits in, and which walls join. Then talk to it:
+
+- "remove the sofa", "hide the roof", "show only Level 2", "make the exterior walls brick", "undo"
+- "how many windows are on the ground floor?", "which walls have doors?", "total length of the exterior walls?"
+
+The AI never invents geometry: it picks existing elements by their facts and Kinex applies exact, undoable operations (highlight, isolate, hide, remove, recolor, material, move, rotate, scale, duplicate). Answers are computed from the model data. Click anything in the model to see what it is; the left panel lists every item by type and floor.
+
+Sample model: the *Duplex Apartment* from the buildingSMART Community Sample Test Files, CC BY 4.0 (see `public/models/ATTRIBUTION.md`).
+
+### Optional: Grok
+
+Create a key at https://console.x.ai and add `XAI_API_KEY=...` to `.env`. Kinex then uses Grok's fastest model first (through the local proxy, so the key never reaches the browser) and falls back to ASU.
+
 ## The screen
 
 - **Top bar**: gravity and light, *Open 3D file*, *Export*, and two switches on the right: **Hands** turns on the webcam and hand gestures (off by default), **Chat** opens the conversation.

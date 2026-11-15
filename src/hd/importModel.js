@@ -3,7 +3,7 @@ import { useKinex } from '../store.js'
 import { buildObject } from '../ai/apply.js'
 import { loadModel } from './HDModel.jsx'
 
-export const IMPORT_EXTENSIONS = ['glb', 'gltf', 'obj', 'stl']
+export const IMPORT_EXTENSIONS = ['ifc', 'glb', 'gltf', 'obj', 'stl']
 const LONGEST_SIDE = 2.2 // meters in the world; Inspect lets you zoom in
 
 // Brings any 3D file into the world as a model you can grab, throw and inspect.
@@ -12,7 +12,18 @@ export async function importModelFile(file) {
   const st = useKinex.getState()
   const ext = file.name.split('.').pop().toLowerCase()
   if (!IMPORT_EXTENSIONS.includes(ext)) {
-    st.setStatus('error', `Kinex opens .glb, .gltf, .obj and .stl files. ${file.name} is a .${ext} file.`)
+    st.setStatus('error', `Kinex opens .ifc, .glb, .gltf, .obj and .stl files. ${file.name} is a .${ext} file.`)
+    return
+  }
+  if (ext === 'ifc') {
+    // Building (BIM) files open as a real model you can take apart by chat.
+    const { openIfc } = await import('../model/current.js')
+    try {
+      const c = await openIfc(await file.arrayBuffer(), file.name.replace(/\.ifc$/i, ''))
+      st.say('assistant', `Opened ${file.name}: ${c.wall || 0} walls, ${c.door || 0} doors, ${c.window || 0} windows, ${c.furniture || 0} pieces of furniture. Ask me anything about it, or tell me what to change.`)
+    } catch {
+      st.setStatus('error', `Couldn't read ${file.name}. Is it a valid IFC file?`)
+    }
     return
   }
   const format = ext === 'gltf' ? 'glb' : ext

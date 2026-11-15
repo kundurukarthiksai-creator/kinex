@@ -10,6 +10,7 @@ import { Bursts } from './Burst.jsx'
 import { HandRig } from './HandRig.jsx'
 import { world } from '../lib/exportGltf.js'
 import { InspectView } from './InspectView.jsx'
+import { ModelView } from './ModelView.jsx'
 import { viewer } from '../lib/viewer.js'
 
 // The world is a photo-studio cyclorama: floor and backdrop share one color and fog
@@ -69,12 +70,13 @@ function Room() {
 function World() {
   const objects = useKinex((s) => s.objects)
   const inspecting = useKinex((s) => Boolean(s.inspectId))
+  const modelOpen = useKinex((s) => Boolean(s.model))
   const root = useRef()
   useEffect(() => {
     world.root = root.current
   }, [])
   return (
-    <group ref={root} name="world" visible={!inspecting}>
+    <group ref={root} name="world" visible={!inspecting && !modelOpen}>
       {objects.map((o) => (
         <KinexObject key={o.id} obj={o} />
       ))}
@@ -96,6 +98,7 @@ function RegisterViewer() {
 
 export default function Stage() {
   const inspecting = useKinex((s) => Boolean(s.inspectId))
+  const modelOpen = useKinex((s) => Boolean(s.model))
   const hemi = useRef()
   const keyLight = useRef()
 
@@ -131,12 +134,13 @@ export default function Stage() {
       </Environment>
 
       <Suspense fallback={null}>
-        <Physics gravity={NO_GRAVITY} paused={inspecting}>
+        <Physics gravity={NO_GRAVITY} paused={inspecting || modelOpen}>
           <Room />
           <World />
           <HandRig />
         </Physics>
         <InspectView />
+        <ModelView />
       </Suspense>
       <Bursts />
 

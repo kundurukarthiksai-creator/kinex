@@ -7,6 +7,7 @@ import { makeHD } from '../hd/meshes.js'
 
 const IDEAS = ['a castle with a red flag', 'a vintage camera', 'a cozy two-story house', 'a robot with glowing eyes']
 const FOLLOW_UPS = ['make it taller', 'add more windows', 'paint the roof blue', 'add detail']
+const MODEL_IDEAS = ['remove the sofa', 'hide the roof', 'how many windows are on the ground floor?', 'show only Level 2', 'make the exterior walls brick', 'undo']
 
 function MicIcon() {
   return (
@@ -67,6 +68,7 @@ export function ChatPanel() {
   const focus = useKinex((s) => s.objects.find((o) => o.id === (s.inspectId || s.lastId)) || s.objects.at(-1))
   const focusHD = useKinex((s) => (focus ? s.hd[focus.id]?.status : null))
   const inspecting = useKinex((s) => Boolean(s.inspectId))
+  const model = useKinex((s) => s.model)
   const set = useKinex((s) => s.set)
   const [text, setText] = useState('')
   const list = useRef()
@@ -89,7 +91,11 @@ export function ChatPanel() {
         <div className="min-w-0 flex-1">
           <h2 className="text-lg font-semibold leading-tight text-ink">Chat</h2>
           <p className="truncate text-sm text-muted">
-            {focus ? (
+            {model ? (
+              <>
+                Working on <span className="font-medium text-ink">{model.name}</span>
+              </>
+            ) : focus ? (
               <>
                 Working on the <span className="font-medium text-ink">{focus.name}</span>, {focus.parts.length} parts
               </>
@@ -103,7 +109,7 @@ export function ChatPanel() {
         </button>
       </div>
 
-      {focus && (
+      {focus && !model && (
         <div className="flex flex-wrap gap-2 border-b border-line px-4 py-2.5">
           {!inspecting && (
             <button data-hand onClick={() => enterInspect(focus.id)} className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-ink hover:bg-cyc">
@@ -153,9 +159,9 @@ export function ChatPanel() {
         {listening && <p className="text-[15px] italic text-muted">{subtitle.text || 'Listening…'}</p>}
       </div>
 
-      {focus && !working && chat.length > 0 && (
+      {(model || focus) && !working && chat.length > 0 && (
         <div className="flex flex-wrap gap-2 px-4 pb-2">
-          {FOLLOW_UPS.map((f) => (
+          {(model ? MODEL_IDEAS : FOLLOW_UPS).map((f) => (
             <button key={f} data-hand onClick={() => send(f)} className="rounded-full border border-line px-3 py-1 text-sm text-muted hover:bg-white hover:text-ink">
               {f}
             </button>
@@ -198,7 +204,7 @@ export function ChatPanel() {
             }
             if (e.key === 'Escape') input.current.blur()
           }}
-          placeholder={focus ? `Change the ${focus.name}, or build something new` : 'Describe something to build'}
+          placeholder={model ? 'Ask about the model, or tell me what to change' : focus ? `Change the ${focus.name}, or build something new` : 'Describe something to build'}
           className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-1 py-2 text-[15px] text-ink outline-none placeholder:text-muted/70"
         />
         <button

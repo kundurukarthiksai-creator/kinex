@@ -4,5 +4,6 @@ dist
 .env.*
 !.env.example
 public/mediapipe
+public/web-ifc
 *.log
 .DS_Store

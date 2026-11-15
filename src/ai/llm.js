@@ -16,8 +16,37 @@ export function setModels(list) {
   working = null
 }
 
+// Grok (xAI) goes first when its key is set; it is reached through the /xai proxy.
+const XAI_READY = IN_BROWSER && typeof __XAI_READY__ !== 'undefined' && __XAI_READY__
+const XAI_BASE = '/xai/v1'
+const isGrok = (m) => m.startsWith('grok')
+const baseFor = (model) => (isGrok(model) ? XAI_BASE : BASE)
+let grokPicked = false
+
+// Picks Grok's fastest chat model from the account's own model list (names change often).
+async function addGrok() {
+  if (!XAI_READY || grokPicked) return
+  grokPicked = true
+  const fixed = typeof __XAI_MODEL__ !== 'undefined' && __XAI_MODEL__
+  let pick = fixed
+  if (!pick) {
+    try {
+      const ids = ((await (await fetch(`${XAI_BASE}/models`)).json()).data || []).map((m) => m.id).filter((id) => isGrok(id) && !/image|vision|imagine|embed/.test(id))
+      const score = (id) => (/non-reasoning/.test(id) ? 4 : 0) + (/fast/.test(id) ? 2 : 0) + (/mini/.test(id) ? -1 : 0) + Number(id.match(/grok-(\d+)/)?.[1] || 0) * 0.1
+      pick = ids.sort((a, b) => score(b) - score(a))[0]
+    } catch (err) {
+      console.warn('[kinex] could not list Grok models', err)
+    }
+  }
+  if (pick) {
+    MODELS = [pick, ...MODELS.filter((m) => m !== pick)]
+    console.info('[kinex] using Grok:', pick)
+  }
+}
+
 // How each model family is told to skip long hidden reasoning before answering.
 function fastMode(model) {
+  if (isGrok(model)) return {}
   if (model.startsWith('gpt-oss')) return { reasoning_effort: 'low' }
   if (model.startsWith('llama') || model.startsWith('gemma')) return {}
   return { chat_template_kwargs: { enable_thinking: false, thinking: false } }
@@ -77,7 +106,7 @@ async function streamOnce(model, messages, rung, onText, maxTokens, schema) {
   const total = setTimeout(() => ctrl.abort(), TOTAL_MS)
   let text = ''
   try {
-    const res = await fetch(`${BASE}/chat/completions`, {
+    const res = await fetch(`${baseFor(model)}/chat/completions`, {
       method: 'POST',
       signal: ctrl.signal,
       headers: { 'Content-Type': 'application/json', ...(DIRECT_KEY ? { Authorization: `Bearer ${DIRECT_KEY}` } : {}) },
@@ -134,6 +163,7 @@ async function streamOnce(model, messages, rung, onText, maxTokens, schema) {
 
 async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTokens = 4096, history = [], schema = RESPONSE_SCHEMA } = {}) {
   if (!READY) throw new LLMError('No OPENAI_API_KEY in .env.')
+  await addGrok()
   const messages = [{ role: 'system', content: system }, ...history, { role: 'user', content: userContent }]
   const order = working ? [working, ...MODELS.filter((m) => m !== working)] : MODELS
   let lastErr
@@ -190,4 +220,10 @@ export function planFromImage(base64Jpeg, scene, onPartial) {
 // Asks for only NEW detail parts for an existing object, streamed like a spawn.
 export function planDetail(obj, onPartial) {
   return generate(refinePrompt(obj), onPartial, { system: REFINE_PROMPT, maxTokens: 8192 })
+}
+
+// Remodel a real model: the AI returns operations on its existing elements.
+export async function planRemodel(text, description, history = []) {
+  const { REMODEL_PROMPT, REMODEL_SCHEMA, remodelPrompt } = await import('../model/remodel.js')
+  return generate(remodelPrompt(text, description), null, { system: REMODEL_PROMPT, schema: REMODEL_SCHEMA, maxTokens: 3000, history })
 }

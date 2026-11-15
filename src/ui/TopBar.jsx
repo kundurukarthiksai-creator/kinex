@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { useKinex } from '../store.js'
 import { importModelFile, IMPORT_EXTENSIONS } from '../hd/importModel.js'
 import { exportNow } from '../ai/commands.js'
+import { openSampleHouse } from '../model/current.js'
 
 const LIGHT = [
   ['studio', 'Studio'],
@@ -63,9 +64,20 @@ export function TopBar() {
       </div>
       <button
         data-hand
+        onClick={async () => {
+          const c = await openSampleHouse()
+          useKinex.getState().say('assistant', `Opened the Duplex Apartment: ${c.wall} walls, ${c.door} doors, ${c.window} windows, ${c.furniture} pieces of furniture and ${c.room} rooms. Try "remove the sofa" or "how many windows are on the ground floor?"`)
+        }}
+        className="h-9 rounded-full bg-white/70 px-3 text-sm font-medium text-ink hover:bg-white"
+        title="A real two-storey apartment building (BIM file) with walls, doors, windows, furniture and rooms"
+      >
+        Open sample house
+      </button>
+      <button
+        data-hand
         onClick={() => file.current.click()}
         className="h-9 rounded-full px-3 text-sm font-medium text-ink hover:bg-white"
-        title="Open a .glb, .gltf, .obj or .stl file (or drop one on the page)"
+        title="Open a building (.ifc) or a 3D file (.glb, .gltf, .obj, .stl), or drop one on the page"
       >
         Open 3D file
       </button>

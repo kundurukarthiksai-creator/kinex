@@ -29,6 +29,10 @@ export const useKinex = create((set, get) => ({
   // queue, image (data URL it is built from), url (GLB blob URL), startedAt, error, show }
   hd: {},
   chatOpen: true,
+  // A real model open for remodeling (see src/model/current.js): summary only.
+  model: null, // { name, kind, counts, storeys, canUndo, rev }
+  modelLoading: null,
+  selection: [],
   handsOn: false, // camera + hand gestures, switched on from the top bar
   // { id, role: 'user'|'assistant', text, status: 'working'|'done'|'error', notes: [string] }
   chat: [],

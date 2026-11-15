@@ -9,6 +9,7 @@ import { useKinex } from './store.js'
 import { hasLLM } from './ai/llm.js'
 import { toggleListening } from './voice/speech.js'
 import { InspectPanel } from './ui/InspectPanel.jsx'
+import { ModelPanel } from './ui/ModelPanel.jsx'
 import { AxisGizmo } from './ui/AxisGizmo.jsx'
 import { HDTray } from './ui/HDTray.jsx'
 import { importModelFile } from './hd/importModel.js'
@@ -19,6 +20,8 @@ const typing = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA
 export default function App() {
   const preset = useKinex((s) => s.environment.preset)
   const inspecting = useKinex((s) => Boolean(s.inspectId))
+  const modelOpen = useKinex((s) => Boolean(s.model))
+  const modelLoading = useKinex((s) => s.modelLoading)
   const chatOpen = useKinex((s) => s.chatOpen)
   const handsOn = useKinex((s) => s.handsOn)
   const [dragging, setDragging] = useState(false)
@@ -83,9 +86,9 @@ export default function App() {
       <h1 className="sr-only">Kinex</h1>
       <TopBar />
       <div className="flex min-h-0 flex-1">
-        {inspecting && (
-          <aside aria-label="Inspect" className="h-full w-[340px] shrink-0 overflow-y-auto border-r border-line bg-[#F3F4F8] p-3">
-            <InspectPanel />
+        {(modelOpen || inspecting) && (
+          <aside aria-label={modelOpen ? 'Model' : 'Inspect'} className="h-full w-[340px] shrink-0 overflow-y-auto border-r border-line bg-[#F3F4F8] p-3">
+            {modelOpen ? <ModelPanel /> : <InspectPanel />}
           </aside>
         )}
         <div className="relative min-w-0 flex-1 overflow-hidden">
@@ -99,6 +102,11 @@ export default function App() {
           <div className="pointer-events-none absolute left-5 top-4 z-20 max-w-[min(640px,80%)]">
             <Subtitle />
           </div>
+          {modelLoading && (
+            <p className="panel breathe absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 rounded-2xl px-5 py-3 font-medium text-ink">
+              Opening {modelLoading}…
+            </p>
+          )}
           {!hasLLM && (
             <p className="panel absolute bottom-4 left-4 z-20 max-w-[36ch] rounded-2xl px-4 py-2 text-sm text-muted">
               Add <code className="font-semibold text-ink">OPENAI_API_KEY</code> to <code className="font-semibold text-ink">.env</code> and restart to unlock the

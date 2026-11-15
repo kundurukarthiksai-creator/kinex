@@ -1,5 +1,8 @@
 import { useKinex, describeScene, describeFocus } from '../store.js'
-import { planFromText, planFromImage, planDetail, hasLLM } from './llm.js'
+import { planFromText, planFromImage, planDetail, planRemodel, hasLLM } from './llm.js'
+import { current, run, undo as undoModel, showAll } from '../model/current.js'
+import { describeModel } from '../model/manifest.js'
+import { augmentSelect } from '../model/remodel.js'
 import { offlinePlan } from './fallback.js'
 import { applyActions, streamSpawns, streamEdits, streamDetail, resolveTarget, MAX_DETAILED_PARTS } from './apply.js'
 import { toActions } from './schema.js'
@@ -126,6 +129,7 @@ export async function runCommand(raw) {
   st.setSubtitle(text, false)
   st.say('user', text)
   const reply = (msg, status = 'done') => st.say('assistant', msg, { status })
+  if (current.model) return remodelCommand(text, earlier)
 
   // Local intents that never need the model.
   if (/^(export|download|save)( (it|this|the world|world|scene|everything|the model|model))?\.?$/i.test(text)) return exportNow()
@@ -324,5 +328,42 @@ export async function addDetail(id) {
     st.editMessage(replyId, { text: msg, status: 'error' })
   } finally {
     st.setInspect({ refining: false })
+  }
+}
+
+// A real model is open: the AI picks existing elements and Kinex edits them exactly.
+async function remodelCommand(text, earlier) {
+  const st = useKinex.getState()
+  const t = text.toLowerCase().replace(/[.!?]+$/, '').trim()
+  if (/^(undo|undo that|undo it|go back|revert( that)?)$/.test(t)) {
+    const label = undoModel()
+    st.say('assistant', label ? `Undid it: ${label}.` : 'Nothing to undo yet.')
+    return
+  }
+  if (/^(show (me )?(everything|all|it all|the whole (thing|house|model|building))|reset( the)? view|show all)$/.test(t)) {
+    showAll()
+    st.say('assistant', 'Everything is back in view.')
+    return
+  }
+  if (!hasLLM) {
+    st.say('assistant', 'Editing by chat needs OPENAI_API_KEY in .env. You can still click items and use the panel on the left.', { status: 'error' })
+    return
+  }
+  const replyId = st.say('assistant', 'Looking through the model…', { status: 'working' })
+  st.setStatus('thinking', 'Thinking')
+  const t0 = performance.now()
+  try {
+    const plan = await planRemodel(text, describeModel(current.model), earlier)
+    const ops = (Array.isArray(plan.ops) ? plan.ops : []).map((op) => ({ ...op, select: augmentSelect(text, op.select) }))
+    console.info('[kinex] remodel', JSON.stringify({ about: plan.about, ops }))
+    const res = run(ops)
+    const answer = res.answers.join(' ')
+    const notes = [...res.notes, `Done in ${((performance.now() - t0) / 1000).toFixed(1)} s`]
+    st.editMessage(replyId, { text: [answer, plan.narration].filter(Boolean).join(' ') || 'Done.', status: 'done', notes })
+    st.setStatus('done')
+  } catch (err) {
+    console.warn('[kinex] remodel failed', err)
+    st.editMessage(replyId, { text: "The AI didn't answer. Try again in a moment.", status: 'error' })
+    st.setStatus('error', "The AI didn't answer.")
   }
 }
