@@ -36,8 +36,8 @@ Without a chat key, the local model library, curated starters, basic shapes, und
 - **Detailed model library:** a Kinex-authored cruise ship with a curved hull, passenger decks, windows, rails, lifeboats and eight color sections, plus locally bundled textured avocado, bottle and speaker assets. Model cards work without an AI request and open an inspection view that fits the model on desktop and mobile.
 - **Independent colors:** Coastal, Ocean and Coral ship palettes, section swatches, or commands such as “make the hull red and windows blue.” Color edits are saved and exported in standard glTF materials. Textured assets use a color tint that preserves their texture.
 - **Undo/redo:** toolbar controls, typed or spoken commands, and shortcuts. Each streamed AI build or continuous grab/resize is one edit; undo also restores live position, orientation, scale and model references. History retains the last 30 edits for this session.
-- **Learn panel:** a marine-design lesson, a buoyancy question and a guided 90-second presentation. The scene illustrates design; it does not simulate water or buoyancy.
-- **Create and Scene panels:** explore prompts, select objects, scale, duplicate, delete, or inspect them.
+- **Guided demo under More options:** a marine-design lesson, a buoyancy question and a guided 90-second presentation. The scene illustrates design; it does not simulate water or buoyancy.
+- **A focused canvas:** the model and one prompt stay visible. **Models** opens the library; **Edit** opens controls for the selected model. Object management, lighting, imports, help and the guided demo are available under **More options**. There is no permanent sidebar or tab row.
 - **Explicit Move and Rotate tools:** choose what a one-hand pinch does. Rotate works anywhere on the canvas for the selected object.
 - **Local autosave:** world name, objects, live positions, orientations, lighting and render settings are saved in IndexedDB. Imported mesh assets are saved with the scene. The save indicator reports when browser storage is unavailable.
 - **Camera control:** opt in, see the tracked skeleton, live gesture feedback and measured inference rate, and switch the webcam fully off. MediaPipe normally runs in a worker with a 24 fps ceiling and a 640px inference frame; this leaves the high-resolution video available for photo capture. Browsers without compatible workers use a main-thread fallback. Invalid landmarks are filtered, hand assignments minimize total movement, and brief detection gaps have a 200ms grace period.
@@ -95,12 +95,12 @@ When connected, **Make it HD** is available in Inspect mode. If chat already use
 
 ## A 90-second educational demo
 
-Open **Learn → Start the guided demo**. Starting a lab replaces the world; Undo can restore it.
+Open **More options → Guided demo → Start the guided demo**. Starting a lab replaces the world; Undo can restore it.
 
 1. **0–15s:** create a realistic ship. Identify its curved hull, multiple passenger decks and lifeboats. This is an original deterministic Kinex mesh, loaded locally.
 2. **15–40s:** ask “Create a detailed lighthouse with a red roof, white tower and yellow lamp.” Watch actual custom AI geometry assemble. An outage falls back to the local lighthouse recipe.
 3. **40–65s:** select the ship and Rotate; enable hands, pinch thumb to index, drag and release. Then try a second hand to scale and twist in World mode.
-4. **65–90s:** inspect the ship, change its hull/windows or pick a palette, undo a change, and show wireframe. Explain buoyancy using the Learn question, then export the model.
+4. **65–90s:** inspect the ship, change its hull/windows or pick a palette, undo a change, and show wireframe. Explain buoyancy using the question in Guided demo, then export the model.
 
 Check camera and microphone permissions on the demo laptop before presenting. Keep mouse controls and the local ship ready if venue lighting or speech recognition is unreliable.
 
@@ -109,6 +109,10 @@ Check camera and microphone permissions on the demo laptop before presenting. Ke
 The ship is generated reproducibly from native Three.js geometry by `node scripts/models/build-ship.mjs`. It is the detailed passenger-ship design offered by Kinex; it is not newly inferred from every prompt or reference image. Its eight material sections support independent colors. Other supported library subjects resolve to existing textured GLB files bundled locally. Their Microsoft CC0-1.0 notices and pinned source checksums are in `public/models/`.
 
 Novel subjects still use Gemini’s bounded primitive construction, and photo input still produces an approximation. Photorealistic arbitrary text-to-3D or accurate single-photo reconstruction needs a separate mesh-generation service; a chat API key alone does not provide it.
+
+## Explaining Kinex to judges
+
+See [the judge guide](docs/judge-guide.md) for a short pitch, a 90-second flow and direct answers about the technology, usefulness, model provenance and limitations.
 
 ## Development and verification
 

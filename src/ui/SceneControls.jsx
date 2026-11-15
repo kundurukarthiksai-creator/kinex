@@ -19,7 +19,7 @@ function Dropdown({ label, icon, value, options, onChange, disabled }) {
   </div>
 }
 
-export function SceneControls() {
+export function SceneControls({expanded=false}) {
   const environment = useKinex((s) => s.environment)
   const grid = useKinex((s) => s.showGrid)
   const thinking = useKinex((s) => s.status.kind === 'thinking')
@@ -28,6 +28,6 @@ export function SceneControls() {
     <Dropdown label="Lighting" icon="sun" value={environment.preset} options={[["studio","Studio light"],["sunset","Golden hour"],["dawn","Soft dawn"],["night","Midnight"]]} onChange={(value) => change('preset',value)} disabled={thinking}/>
     <Dropdown label="Gravity" icon="gravity" value={environment.gravity} options={[["normal","Earth gravity"],["low","Moon gravity"],["zero","Zero gravity"]]} onChange={(value) => change('gravity',value)} disabled={thinking}/>
     <span className="toolbar-divider"/>
-    <button data-hand className={`toolbar-icon ${grid ? 'active' : ''}`} aria-label="Toggle floor grid" title="Toggle floor grid" aria-pressed={grid} onClick={() => useKinex.getState().set({ showGrid: !grid })}><Icon name="grid" size={16}/></button>
+    <button data-hand className={`toolbar-icon ${expanded?'grid-control':''} ${grid ? 'active' : ''}`} aria-label="Toggle floor grid" title="Toggle floor grid" aria-pressed={grid} onClick={() => useKinex.getState().set({ showGrid: !grid })}><Icon name="grid" size={16}/>{expanded&&<span>Floor grid</span>}</button>
   </div>
 }

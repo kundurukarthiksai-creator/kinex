@@ -1,4 +1,5 @@
 const paths = {
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
   ship: 'M3 13l9-3 9 3-3 7H6l-3-7Zm3-2V7h12v4M9 7V3h6v4M2 22l4-1 4 1 4-1 4 1 4-1',
   leaf: 'M20 3c-12-2-18 4-16 12s16 5 16-12ZM5 19l10-10',
   bottle: 'M9 2h6v4l3 3v12H6V9l3-3V2Zm-3 11h12',

@@ -43,7 +43,7 @@ function Row({ label, children }) {
   )
 }
 
-export function InspectPanel() {
+export function InspectPanel({onDone = exitInspect}) {
   const obj = useKinex((s) => s.objects.find((o) => o.id === s.inspectId))
   const inspect = useKinex((s) => s.inspect)
   const setInspect = useKinex((s) => s.setInspect)
@@ -114,6 +114,7 @@ export function InspectPanel() {
         <Btn active={inspect.wireframe} onClick={() => setInspect({ wireframe: !inspect.wireframe })}>
           Wireframe
         </Btn>
+<Btn active={Boolean(inspect.showAxes)} onClick={()=>setInspect({showAxes:!inspect.showAxes})}>Axes</Btn>
         <Btn active={inspect.spin} onClick={() => setInspect({ spin: !inspect.spin })}>
           Spin
         </Btn>
@@ -176,7 +177,7 @@ export function InspectPanel() {
         >
           {inspect.refining ? 'Adding detail…' : full ? 'Fully detailed' : 'Add detail'}
         </button>
-        <button data-hand onClick={exitInspect} className="h-11 rounded-2xl px-4 font-medium text-ink hover:bg-white">
+        <button data-hand onClick={onDone} className="h-11 rounded-2xl px-4 font-medium text-ink hover:bg-white">
           Done
         </button>
       </div>

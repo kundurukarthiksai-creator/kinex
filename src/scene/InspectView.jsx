@@ -55,6 +55,7 @@ function InspectModel({ obj }) {
   const model = useRef()
   const explode = useKinex((s) => s.inspect.explode)
   const wireframe = useKinex((s) => s.inspect.wireframe)
+  const showAxes = useKinex(s=>Boolean(s.inspect.showAxes))
   const spin = useKinex((s) => s.inspect.spin)
   const focused = useKinex((s) => s.inspect.focusPart)
   const hdUrl = useKinex((s) => {
@@ -112,7 +113,7 @@ function InspectModel({ obj }) {
           ))}
         </group>
       </group>
-      <Axes length={anchor.radius * 1.25} />
+      {showAxes&&<Axes length={anchor.radius * 1.25} />}
     </group>
   )
 }

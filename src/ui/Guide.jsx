@@ -7,8 +7,16 @@ export function Modal({ title, children, onClose, className = '' }) {
   const heading = useId()
   useEffect(() => {
     const element = dialog.current
+    const previous = document.activeElement
     element.showModal()
-    return () => element.close()
+    return () => {
+      element.close()
+      queueMicrotask(() => {
+        if(document.querySelector('dialog[open]'))return
+        const target=previous?.isConnected&&previous!==document.body?previous:document.querySelector('[data-dialog-return]')
+        target?.focus()
+      })
+    }
   }, [])
   return <dialog ref={dialog} className={`studio-modal ${className}`} aria-labelledby={heading} onCancel={(e) => { e.preventDefault(); onClose() }} onClick={(e) => e.target === e.currentTarget && onClose()}>
     <div className="modal-content"><div className="modal-heading"><h2 id={heading}>{title}</h2><button data-hand className="icon-button" aria-label="Close dialog" onClick={onClose}><Icon name="close"/></button></div>{children}</div>

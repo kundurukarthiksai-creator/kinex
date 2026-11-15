@@ -25,19 +25,18 @@ export function CommandBar() {
     runCommand(value.trim())
     setText('')
   }
-  return <div className={`command-dock ${listening ? 'is-listening' : ''} ${thinking ? 'is-building' : ''}`}>
-    <div className="command-dock-heading"><span><span className={`status-dot ${listening || thinking ? 'pulsing' : ''}`}/>{listening ? 'LISTENING TO YOUR IDEA' : thinking ? 'BRINGING YOUR IDEA TO LIFE' : 'YOUR WORDS. A NEW WORLD.'}</span><span className="dock-provider">{!hasLLM||aiState==='offline'?'Local mode':lastOperation?`${lastOperation.kind==='ai'?'AI':lastOperation.kind==='library'?'Model library':lastOperation.kind==='fallback'?'Offline':'Local'} · ${(lastOperation.ms/1000).toFixed(1)}s`:'AI configured'}<Icon name="spark" size={12}/></span></div>
-    <form className="command-form" onSubmit={(e) => { e.preventDefault(); send(text) }}>
-      <span className="prompt-spark"><Icon name="spark" size={22}/></span>
+  const stateLabel = voiceState==='starting'?'Starting microphone…':listening?'Listening…':thinking?'Building your model…':!hasLLM||aiState==='offline'?'Local mode':lastOperation?`${lastOperation.kind==='ai'?'AI':lastOperation.kind==='library'?'Model library':lastOperation.kind==='fallback'?'Offline builder':'Local edit'} · ${(lastOperation.ms/1000).toFixed(1)}s`:'Type a description or use your voice'
+  return <div className={`command-dock ${listening?'is-listening':''} ${thinking?'is-building':''}`}>
+    <form className="command-form" onSubmit={e=>{e.preventDefault();send(text)}}>
+      <Icon name="spark" size={19} className="prompt-spark"/>
       <label className="sr-only" htmlFor="kinex-input">Describe what to create or change</label>
-      <input ref={input} id="kinex-input" data-hand value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && input.current.blur()} placeholder={voiceState==='starting'?'Starting microphone…':listening ? 'Go on. We’re listening…' : thinking ? 'A little imagination in progress…' : inspecting ? 'Make it blue, add details, or change its shape…' : 'A floating island with a tiny house…'} autoComplete="off" maxLength={2000} disabled={thinking}/>
-      <kbd className="prompt-shortcut">/</kbd>
-      <button type="button" data-hand className={`mic-button ${listening ? 'active' : ''}`} onClick={toggleListening} disabled={thinking || !hasSpeech} aria-pressed={listening} aria-label={listening ? 'Stop listening' : 'Use voice'} title={hasSpeech ? 'Speak your idea (M)' : 'Voice is available in Chrome and Edge'}><Icon name="mic" size={19}/></button>
-      <button type="submit" data-hand className="send-button" disabled={!text.trim() || thinking} aria-label="Create from prompt" title="Create from your prompt">{thinking ? <span className="loading-spinner"/> : <Icon name="arrow" size={20}/>}</button>
-      {thinking && operation && <button type="button" data-hand className="cancel-build" onClick={cancelOperation} aria-label="Cancel creation"><Icon name="close" size={14}/>Cancel</button>}
+      <input ref={input} id="kinex-input" data-hand value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>e.key==='Escape'&&input.current.blur()} placeholder={listening?'Listening to your command…':thinking?'Building…':inspecting?'Ask for a change, e.g. “make the hull blue”':'Describe a model, e.g. “a detailed cruise ship”'} autoComplete="off" maxLength={2000} disabled={thinking}/>
+      <button type="button" data-hand className="photo-button" aria-label="Recreate from photo" onClick={()=>setCapture(true)} disabled={camera!=='on'||scanning||thinking} title={camera==='on'?'Preview a photo and build a 3D approximation':'Enable hand controls to use the camera'}><Icon name="camera" size={18}/></button>
+      <button type="button" data-hand className={`mic-button ${listening?'active':''}`} onClick={toggleListening} disabled={thinking||!hasSpeech} aria-pressed={listening} aria-label={listening?'Stop listening':'Use voice'} title={hasSpeech?'Speak a command (M)':'Voice is available in Chrome and Edge'}><Icon name="mic" size={19}/></button>
+      {thinking&&operation?<button type="button" data-hand className="cancel-build" onClick={cancelOperation} aria-label="Cancel creation"><Icon name="close" size={16}/></button>:<button type="submit" data-hand className="send-button" disabled={!text.trim()||thinking} aria-label="Create from prompt" title="Create or change"><Icon name="arrow" size={20}/></button>}
     </form>
-    <div className="command-dock-footer"><span>Type an idea, or use your voice.</span><button data-hand onClick={() => setCapture(true)} disabled={camera !== 'on' || scanning || thinking} title={camera === 'on' ? 'Preview a photo and reconstruct the object in your hand' : 'Enable your camera to recreate a real object'}><Icon name="camera" size={13}/>{scanning ? 'Scanning your object…' : 'Summon a real object'}<Icon name="arrow" size={11}/></button></div>
-    {voiceError && <p className="voice-error" role="status">{voiceError}</p>}
-    {capture && <CaptureDialog onClose={() => setCapture(false)}/>}
+    <div className="command-state"><span className={listening||thinking?'status-dot pulsing':'status-dot'}/><span>{stateLabel}</span><kbd>/</kbd></div>
+    {voiceError&&<p className="voice-error" role="status">{voiceError}</p>}
+    {capture&&<CaptureDialog onClose={()=>setCapture(false)}/>}
   </div>
 }
