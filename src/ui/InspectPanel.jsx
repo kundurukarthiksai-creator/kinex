@@ -59,7 +59,7 @@ export function InspectPanel() {
   const full = obj.parts.length >= MAX_DETAILED_PARTS
 
   return (
-    <div className="panel flex w-[min(340px,calc(100vw-2rem))] flex-col gap-3 rounded-3xl p-4">
+    <div className="flex w-full flex-col gap-3 p-1">
       <div>
         <h2 className="text-2xl font-semibold leading-tight tracking-[-0.02em] text-ink first-letter:uppercase">{obj.name}</h2>
         <p className="text-sm text-muted">

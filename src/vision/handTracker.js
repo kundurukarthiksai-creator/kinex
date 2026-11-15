@@ -70,7 +70,9 @@ async function loadLandmarker() {
 }
 
 let starting = null
+let wanted = false // false once Hands is switched off, even mid-startup
 export function startTracker(video) {
+  wanted = true
   if (tracker.running) return Promise.resolve()
   starting ??= boot(video).finally(() => (starting = null))
   return starting
@@ -90,6 +92,7 @@ async function boot(video) {
     await video.play()
     tracker.video = video
     tracker.landmarker ??= await loadLandmarker()
+    if (!wanted) return stopTracker() // switched off while starting
     tracker.running = true
     st.set({ camera: 'on' })
     requestAnimationFrame(loop)
@@ -172,3 +175,20 @@ function process(detections, now, aspect) {
 }
 
 export { LM }
+
+// Turns the camera off and forgets the hands. The hand model stays loaded so
+// switching Hands back on is instant.
+export function stopTracker() {
+  wanted = false
+  tracker.running = false
+  const v = tracker.video
+  v?.srcObject?.getTracks?.().forEach((t) => t.stop())
+  if (v) v.srcObject = null
+  tracker.video = null
+  for (const h of tracker.hands) {
+    h.present = false
+    h.mode = 'idle'
+    h.hold = 0
+  }
+  useKinex.getState().set({ camera: 'off', handsSeen: 0, gestures: ['none', 'none'] })
+}

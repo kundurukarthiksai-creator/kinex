@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import Stage from './scene/Stage.jsx'
 import { CameraPiP } from './ui/CameraPiP.jsx'
-import { CommandBar } from './ui/CommandBar.jsx'
 import { Subtitle } from './ui/Subtitle.jsx'
-import { SceneControls } from './ui/SceneControls.jsx'
+import { TopBar } from './ui/TopBar.jsx'
+import { ChatPanel } from './ui/ChatPanel.jsx'
 import { HandCursors } from './ui/HandCursors.jsx'
 import { useKinex } from './store.js'
 import { hasLLM } from './ai/llm.js'
@@ -19,6 +19,8 @@ const typing = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA
 export default function App() {
   const preset = useKinex((s) => s.environment.preset)
   const inspecting = useKinex((s) => Boolean(s.inspectId))
+  const chatOpen = useKinex((s) => s.chatOpen)
+  const handsOn = useKinex((s) => s.handsOn)
   const [dragging, setDragging] = useState(false)
 
   // Drop any 3D file onto the page to view it.
@@ -75,49 +77,46 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // Left: Inspect controls. Middle: the 3D view. Right: chat. Nothing sits on the model.
   return (
-    <main className="relative h-full w-full">
+    <main className="flex h-full w-full flex-col">
       <h1 className="sr-only">Kinex</h1>
-      <Stage />
-      {/* Studio falloff toward the edges of the paper sweep. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-10"
-        style={{ background: 'radial-gradient(120% 95% at 50% 42%, transparent 55%, rgb(20 24 48 / 0.16))' }}
-      />
-
-      <header className="pointer-events-none fixed left-4 top-4 z-30 flex flex-col items-start gap-3 sm:left-6 sm:top-5">
-        <p className="pointer-events-auto text-[26px] font-bold leading-none tracking-[-0.03em]" style={{ color: 'var(--stage-ink)' }}>
-          Kinex
-        </p>
-        <div className="pointer-events-auto">{inspecting ? <InspectPanel /> : <SceneControls />}</div>
-        {!hasLLM && !inspecting && (
-          <p className="panel pointer-events-auto max-w-[34ch] rounded-2xl px-4 py-2 text-sm text-muted">
-            Add <code className="font-semibold text-ink">OPENAI_API_KEY</code> to <code className="font-semibold text-ink">.env</code> and
-            restart to unlock the full builder. The offline builder handles simple shapes until then.
-          </p>
+      <TopBar />
+      <div className="flex min-h-0 flex-1">
+        {inspecting && (
+          <aside aria-label="Inspect" className="h-full w-[340px] shrink-0 overflow-y-auto border-r border-line bg-[#F3F4F8] p-3">
+            <InspectPanel />
+          </aside>
         )}
-      </header>
-
-      <CameraPiP />
-      <AxisGizmo />
-      <HDTray />
-
-      <section className="pointer-events-none fixed inset-x-4 bottom-4 z-30 flex flex-col gap-5 sm:inset-x-6 sm:bottom-6">
-        <div className="pointer-events-none">
-          <Subtitle />
+        <div className="relative min-w-0 flex-1 overflow-hidden">
+          <Stage />
+          {/* Studio falloff toward the edges of the paper sweep. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-10"
+            style={{ background: 'radial-gradient(120% 95% at 50% 42%, transparent 55%, rgb(20 24 48 / 0.16))' }}
+          />
+          <div className="pointer-events-none absolute left-5 top-4 z-20 max-w-[min(640px,80%)]">
+            <Subtitle />
+          </div>
+          {!hasLLM && (
+            <p className="panel absolute bottom-4 left-4 z-20 max-w-[36ch] rounded-2xl px-4 py-2 text-sm text-muted">
+              Add <code className="font-semibold text-ink">OPENAI_API_KEY</code> to <code className="font-semibold text-ink">.env</code> and restart to unlock the
+              full builder. The offline builder handles simple shapes until then.
+            </p>
+          )}
+          {handsOn && <CameraPiP />}
+          <AxisGizmo />
+          <HDTray />
+          {dragging && (
+            <div className="pointer-events-none absolute inset-4 z-50 grid place-items-center rounded-[28px] border-2 border-dashed border-cobalt bg-white/40">
+              <p className="panel rounded-2xl px-6 py-4 text-xl font-semibold text-ink">Drop a .glb, .gltf, .obj or .stl file to view it</p>
+            </div>
+          )}
         </div>
-        <div className="pointer-events-auto">
-          <CommandBar />
-        </div>
-      </section>
-
-      {dragging && (
-        <div className="pointer-events-none fixed inset-4 z-50 grid place-items-center rounded-[28px] border-2 border-dashed border-cobalt bg-white/40">
-          <p className="panel rounded-2xl px-6 py-4 text-xl font-semibold text-ink">Drop a .glb, .gltf, .obj or .stl file to view it</p>
-        </div>
-      )}
-      <HandCursors />
+        {chatOpen && <ChatPanel />}
+      </div>
+      {handsOn && <HandCursors />}
     </main>
   )
 }

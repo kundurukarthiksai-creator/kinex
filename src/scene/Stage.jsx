@@ -138,7 +138,6 @@ export default function Stage() {
       dpr={[1, 1.75]}
       camera={{ position: [0, 4.2, 13], fov: 40, near: 0.1, far: 120 }}
       gl={{ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: false }}
-      className="!fixed inset-0"
     >
       <EnvironmentRig floorMat={floorMat} hemi={hemi} keyLight={keyLight} />
       <hemisphereLight ref={hemi} args={['#FFFFFF', '#AEB4C4', 0.55]} />

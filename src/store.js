@@ -27,6 +27,10 @@ export const useKinex = create((set, get) => ({
   // HD meshes by object id: { status: image|queued|meshing|ready|failed, stage, progress,
   // queue, image (data URL it is built from), url (GLB blob URL), startedAt, error, show }
   hd: {},
+  chatOpen: true,
+  handsOn: false, // camera + hand gestures, switched on from the top bar
+  // { id, role: 'user'|'assistant', text, status: 'working'|'done'|'error', notes: [string] }
+  chat: [],
   handsSeen: 0,
   gestures: ['none', 'none'],
 
@@ -37,6 +41,12 @@ export const useKinex = create((set, get) => ({
   addObject: (obj) => set((s) => ({ objects: [...s.objects, obj], lastId: obj.id })),
   setInspect: (patch) => set((s) => ({ inspect: { ...s.inspect, ...patch } })),
   setHD: (id, patch) => set((s) => ({ hd: { ...s.hd, [id]: { ...s.hd[id], ...patch } } })),
+  say: (role, text, extra = {}) => {
+    const msg = { id: `m${Date.now()}${Math.random().toString(36).slice(2, 6)}`, role, text, status: 'done', notes: [], ...extra }
+    set((s) => ({ chat: [...s.chat.slice(-60), msg] }))
+    return msg.id
+  },
+  editMessage: (id, patch) => set((s) => ({ chat: s.chat.map((m) => (m.id === id ? { ...m, ...patch } : m)) })),
   updateObject: (id, patch) =>
     set((s) => ({ objects: s.objects.map((o) => (o.id === id ? { ...o, ...patch, rev: (o.rev || 0) + 1 } : o)) })),
   removeObject: (id, withBurst = true) => {
@@ -87,5 +97,21 @@ export function describeScene() {
         behavior: o.behavior.kind,
       }
     }),
+  }
+}
+
+const r2 = (n) => Math.round(n * 100) / 100
+const deg = (r) => Math.round((r * 180) / Math.PI)
+
+// The model being worked on, part by part with indices, so the AI can edit it.
+export function describeFocus() {
+  const { objects, inspectId, heldIds, hoverId, lastId } = useKinex.getState()
+  const id = inspectId || heldIds[0] || hoverId || lastId || objects.at(-1)?.id
+  const o = objects.find((x) => x.id === id)
+  if (!o) return null
+  return {
+    id: o.id,
+    name: o.name,
+    parts: o.parts.map((p, i) => [i, p.shape, p.size.map(r2), p.position.map(r2), p.rotation.map(deg), p.color, p.material]),
   }
 }

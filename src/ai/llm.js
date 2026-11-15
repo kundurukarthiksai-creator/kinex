@@ -1,12 +1,13 @@
-import { RESPONSE_SCHEMA } from './schema.js'
-import { SYSTEM_PROMPT, SUMMON_PROMPT, REFINE_PROMPT, userPrompt, refinePrompt } from './prompt.js'
+import { RESPONSE_SCHEMA, EDIT_SCHEMA } from './schema.js'
+import { SYSTEM_PROMPT, SUMMON_PROMPT, REFINE_PROMPT, EDIT_PROMPT, userPrompt, refinePrompt } from './prompt.js'
 import { parsePartial } from './partialJson.js'
 
 // ASU's OpenAI-compatible server, reached through the Vite proxy (see vite.config.js),
-// which adds the key from .env. Under tests (no Vite define) it calls the server directly.
-const DIRECT_KEY = typeof __LLM_READY__ === 'undefined' ? globalThis.process?.env?.OPENAI_API_KEY : null
-const READY = typeof __LLM_READY__ === 'undefined' ? Boolean(DIRECT_KEY) : __LLM_READY__
-const BASE = typeof __LLM_BASE__ === 'undefined' ? 'https://openai.rc.asu.edu/v1' : __LLM_BASE__
+// which adds the key from .env. Outside the browser (tests) it calls the server directly.
+const IN_BROWSER = typeof window !== 'undefined' && typeof __LLM_READY__ !== 'undefined'
+const DIRECT_KEY = IN_BROWSER ? null : globalThis.process?.env?.OPENAI_API_KEY
+const READY = IN_BROWSER ? __LLM_READY__ : Boolean(DIRECT_KEY)
+const BASE = IN_BROWSER ? __LLM_BASE__ : 'https://openai.rc.asu.edu/v1'
 const ENV_MODEL = typeof __LLM_MODEL__ === 'undefined' ? '' : __LLM_MODEL__
 // deepseek-v4-1-flash with reasoning off starts writing in ~1s; qwen38-27b is the backup.
 const MODELS = [...new Set([ENV_MODEL, 'deepseek-v4-1-flash', 'qwen38-27b'].filter(Boolean))]
@@ -28,7 +29,7 @@ let working = null
 
 export class LLMError extends Error {}
 
-function body(model, messages, rung, maxTokens) {
+function body(model, messages, rung, maxTokens, schema = RESPONSE_SCHEMA) {
   return {
     model,
     messages,
@@ -37,7 +38,7 @@ function body(model, messages, rung, maxTokens) {
     max_tokens: maxTokens,
     ...(rung.noThink ? { chat_template_kwargs: { enable_thinking: false, thinking: false } } : {}),
     ...(rung.format === 'json_schema'
-      ? { response_format: { type: 'json_schema', json_schema: { name: 'kinex_plan', schema: RESPONSE_SCHEMA } } }
+      ? { response_format: { type: 'json_schema', json_schema: { name: 'kinex_plan', schema } } }
       : rung.format === 'json_object'
         ? { response_format: { type: 'json_object' } }
         : {}),
@@ -59,7 +60,7 @@ export function extractJson(text) {
 }
 
 // Streams one completion. onText receives the full text so far after every chunk.
-async function streamOnce(model, messages, rung, onText, maxTokens) {
+async function streamOnce(model, messages, rung, onText, maxTokens, schema) {
   const ctrl = new AbortController()
   let idle = setTimeout(() => ctrl.abort(), IDLE_MS)
   const total = setTimeout(() => ctrl.abort(), TOTAL_MS)
@@ -69,7 +70,7 @@ async function streamOnce(model, messages, rung, onText, maxTokens) {
       method: 'POST',
       signal: ctrl.signal,
       headers: { 'Content-Type': 'application/json', ...(DIRECT_KEY ? { Authorization: `Bearer ${DIRECT_KEY}` } : {}) },
-      body: JSON.stringify(body(model, messages, rung, maxTokens)),
+      body: JSON.stringify(body(model, messages, rung, maxTokens, schema)),
     })
     if (!res.ok) {
       const err = new LLMError(`${res.status} ${(await res.text()).slice(0, 200)}`)
@@ -120,12 +121,9 @@ async function streamOnce(model, messages, rung, onText, maxTokens) {
   }
 }
 
-async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTokens = 4096 } = {}) {
+async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTokens = 4096, history = [], schema = RESPONSE_SCHEMA } = {}) {
   if (!READY) throw new LLMError('No OPENAI_API_KEY in .env.')
-  const messages = [
-    { role: 'system', content: system },
-    { role: 'user', content: userContent },
-  ]
+  const messages = [{ role: 'system', content: system }, ...history, { role: 'user', content: userContent }]
   const order = working ? [working, ...MODELS.filter((m) => m !== working)] : MODELS
   let lastErr
   for (const model of order) {
@@ -139,7 +137,7 @@ async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTok
         if (onPartial?.(p)) built = true
       }
       try {
-        const text = await streamOnce(model, messages, LADDER[r], onText, maxTokens)
+        const text = await streamOnce(model, messages, LADDER[r], onText, maxTokens, schema)
         const plan = extractJson(text)
         rungFor.set(model, r)
         working = model
@@ -157,8 +155,15 @@ async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTok
   throw lastErr || new LLMError('The model failed.')
 }
 
-export function planFromText(text, scene, onPartial) {
-  return generate(userPrompt(text, scene), onPartial)
+// history: earlier turns as [{role, content}], so follow-ups like "bigger" make sense.
+export function planFromText(text, scene, onPartial, { focus = null, history = [] } = {}) {
+  // With a model in focus, the conversation edits it (EDIT_PROMPT); otherwise build from scratch.
+  return generate(userPrompt(text, scene, focus), onPartial, {
+    history,
+    maxTokens: 6144,
+    system: focus ? EDIT_PROMPT : SYSTEM_PROMPT,
+    schema: focus ? EDIT_SCHEMA : RESPONSE_SCHEMA,
+  })
 }
 
 export function planFromImage(base64Jpeg, scene, onPartial) {

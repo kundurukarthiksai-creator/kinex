@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useKinex } from '../store.js'
-import { tracker, startTracker } from '../vision/handTracker.js'
+import { tracker, startTracker, stopTracker } from '../vision/handTracker.js'
 
 const BONES = [
   [0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12],
@@ -31,8 +31,10 @@ export function CameraPiP() {
   const handsSeen = useKinex((s) => s.handsSeen)
   const inspecting = useKinex((s) => Boolean(s.inspectId))
 
+  // Mounted only while Hands is on: start the camera, and stop it when switched off.
   useEffect(() => {
     startTracker(video.current)
+    return () => stopTracker()
   }, [])
 
   useEffect(() => {
@@ -71,7 +73,7 @@ export function CameraPiP() {
   const twoHands = handsSeen === 2 && gestures[0] === 'pinch' && gestures[1] === 'pinch'
 
   return (
-    <aside className="fixed right-4 top-4 z-40 w-[240px] sm:w-[280px]" aria-label="Camera and gestures">
+    <aside className="absolute right-4 top-4 z-30 w-[220px]" aria-label="Camera and gestures">
       <div className="panel relative aspect-[4/3] overflow-hidden rounded-2xl">
         <div className="absolute inset-0 -scale-x-100">
           <video ref={video} className="h-full w-full object-cover" muted playsInline />

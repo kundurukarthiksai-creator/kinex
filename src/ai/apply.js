@@ -1,4 +1,5 @@
-import { SHAPES, MATERIALS, PHYSICS, BEHAVIORS, PRESETS, GRAVITY, toActions } from './schema.js'
+import * as THREE from 'three'
+import { SHAPES, MATERIALS, PHYSICS, BEHAVIORS, PRESETS, GRAVITY, toActions, focusEdit } from './schema.js'
 import { useKinex, bodies, newId, dominantColor } from '../store.js'
 import { ASSEMBLY_STAGGER } from '../scene/interaction.js'
 
@@ -10,7 +11,18 @@ const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d)
 const vec = (v, d) => (Array.isArray(v) && v.length >= 3 ? [0, 1, 2].map((i) => num(v[i], d[i])) : d)
 const pick = (v, list, d) => (list.includes(v) ? v : d)
 const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
-const color = (c, d = '#8890A6') => (typeof c === 'string' && HEX.test(c.trim()) ? c.trim() : d)
+// Accepts whatever color the model writes ("#2F5C9E", "#2F5C9EFF", "blue", "rgb(...)") as #RRGGBB.
+const _c = new THREE.Color()
+function color(c, d = '#8890A6') {
+  if (typeof c !== 'string' || !c.trim()) return d
+  const v = c.trim()
+  if (HEX.test(v)) return v
+  if (/^#[0-9a-f]{8}$/i.test(v)) return v.slice(0, 7)
+  const name = v.toLowerCase().replace(/\s+/g, '')
+  if (THREE.Color.NAMES?.[name] !== undefined) return `#${_c.setHex(THREE.Color.NAMES[name]).getHexString()}`
+  if (/^(rgb|hsl)a?\(/.test(name)) return `#${_c.setStyle(name).getHexString()}`
+  return d
+}
 
 export function sanitizePart(p = {}) {
   const size = vec(p.size, [0.5, 0.5, 0.5]).map((n) => clamp(Math.abs(n), 0.03, 8))
@@ -134,12 +146,13 @@ export function streamSpawns(plan, live) {
 
 // Applies validated actions to the world. Spawns already streamed in (`live`) are
 // finalized in place instead of being built again.
-export function applyActions(plan, live = new Map()) {
+export function applyActions(plan, live = new Map(), edits = new Map(), focusId = null) {
   const st = useKinex.getState()
-  const actions = toActions(plan).slice(0, 12)
+  const actions = toActions(plan, focusId).slice(0, 12)
   const spawned = []
   let delay = 0
   let spawnIndex = -1
+  let modifyIndex = -1
   for (const a of actions) {
     const objects = [...useKinex.getState().objects, ...spawned]
     switch (a?.type) {
@@ -169,17 +182,31 @@ export function applyActions(plan, live = new Map()) {
         break
       }
       case 'modify': {
-        const o = resolveTarget(a.targetId, objects)
+        modifyIndex++
+        const streamed = edits.get(modifyIndex)
+        const found = resolveTarget(a.targetId, objects)
+        // Parts streamed onto the presumed model belong to another one: take them back.
+        if (streamed && found && streamed.id !== found.id) {
+          const wrong = useKinex.getState().objects.find((x) => x.id === streamed.id)
+          if (wrong) st.updateObject(wrong.id, { parts: wrong.parts.slice(0, wrong.parts.length - streamed.n) })
+          streamed.n = 0
+        }
+        const o = found && useKinex.getState().objects.find((x) => x.id === found.id)
         if (!o) break
         const patch = {}
         if (Number.isFinite(Number(a.scale)) && Number(a.scale) > 0) patch.scale = clamp(o.scale * Number(a.scale), 0.15, 6)
-        if (a.color && HEX.test(a.color)) {
+        let parts = o.parts
+        if (a.color && color(a.color, null)) {
           const from = dominantColor(o)
-          patch.parts = o.parts.map((p) => (p.color === from ? { ...p, color: a.color } : p))
+          const to = color(a.color)
+          parts = parts.map((p) => (p.color === from ? { ...p, color: to } : p))
         }
         if (Array.isArray(a.parts) && a.parts.length) {
-          patch.parts = buildObject({ ...a, position: o.position }, []).parts
+          parts = buildObject({ ...a, position: o.position }, []).parts
+        } else {
+          parts = editParts(parts, a, streamed && streamed.id === o.id ? streamed.n : 0)
         }
+        if (parts !== o.parts) patch.parts = parts
         if (a.physics) patch.physics = pick(a.physics, PHYSICS, o.physics)
         if (a.behavior) {
           const b = sanitizeBehavior(a.behavior)
@@ -264,4 +291,66 @@ export function streamDetail(plan, id, live) {
   live.n += fresh.length
   st.updateObject(id, { parts: [...o.parts, ...fresh.map((p, k) => ({ ...sanitizePart(p), born: now + k * ASSEMBLY_STAGGER }))] })
   return true
+}
+
+const DEG2 = Math.PI / 180
+
+// Applies addParts / editParts / removeParts to a part list. `already` = how many of
+// addParts were streamed in (they sit at the end of the list).
+export function editParts(parts, a, already = 0) {
+  const original = parts.length - already
+  let out = parts
+  const edits = Array.isArray(a.editParts) ? a.editParts : []
+  if (edits.length) {
+    out = out.slice()
+    for (const e of edits) {
+      const i = Number(e?.index)
+      if (!Number.isInteger(i) || i < 0 || i >= original) continue
+      const p = { ...out[i] }
+      if (e.shape) p.shape = pick(e.shape, SHAPES, p.shape)
+      if (Array.isArray(e.size)) p.size = vec(e.size, p.size).map((n) => clamp(Math.abs(n), 0.03, 8))
+      if (Array.isArray(e.position)) p.position = vec(e.position, p.position).map((n) => clamp(n, -8, 12))
+      else if (Array.isArray(e.size)) {
+        // Grew without a new position: keep its base where it was ("taller" grows up, not into the ground).
+        const base = out[i].position[1] - out[i].size[1] / 2
+        p.position = [p.position[0], base + p.size[1] / 2, p.position[2]]
+      }
+      if (Array.isArray(e.rotation)) p.rotation = vec(e.rotation, [0, 0, 0]).map((n) => clamp(n, -720, 720) * DEG2)
+      if (e.color) p.color = color(e.color, p.color)
+      if (e.material) p.material = pick(e.material, MATERIALS, p.material)
+      out[i] = p
+    }
+  }
+  const adds = Array.isArray(a.addParts) ? a.addParts.filter(partReady).slice(already) : []
+  if (adds.length) {
+    const now = performance.now()
+    out = [...out, ...adds.map((p, k) => ({ ...sanitizePart(p), born: now + k * ASSEMBLY_STAGGER }))]
+  }
+  const remove = new Set((Array.isArray(a.removeParts) ? a.removeParts : []).map(Number).filter((i) => Number.isInteger(i) && i >= 0 && i < original))
+  if (remove.size) out = out.filter((_, i) => !remove.has(i))
+  if (out.length > MAX_DETAILED_PARTS) out = out.slice(0, MAX_DETAILED_PARTS)
+  return out.length ? out : parts
+}
+
+// Streams addParts of each modify onto its model while the AI is still writing.
+// The target id arrives last (keys are alphabetical), so parts go to the model
+// being worked on (`focusId`); applyActions moves them if the target differs.
+export function streamEdits(plan, edits, focusId) {
+  const conv = focusEdit(plan, focusId) // conversation format: top-level "add"
+  const mods = conv ? [conv] : Array.isArray(plan?.modify) ? plan.modify : []
+  mods.forEach((m, i) => {
+    if (!m || !Array.isArray(m.addParts)) return
+    const st = useKinex.getState()
+    const entry = edits.get(i) || { id: (m.targetId && resolveTarget(m.targetId, st.objects, false)?.id) || focusId, n: 0 }
+    const o = st.objects.find((x) => x.id === entry.id)
+    if (!o) return
+    const ready = m.addParts.filter(partReady)
+    const fresh = ready.slice(entry.n, entry.n + Math.max(0, MAX_DETAILED_PARTS - o.parts.length))
+    if (!fresh.length) return
+    const now = performance.now()
+    entry.n += fresh.length
+    edits.set(i, entry)
+    st.updateObject(o.id, { parts: [...o.parts, ...fresh.map((p, k) => ({ ...sanitizePart(p), born: now + k * ASSEMBLY_STAGGER }))] })
+  })
+  return edits.size > 0
 }

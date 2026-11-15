@@ -22,6 +22,14 @@ const TUMBLE = 3.4 // radians of model turn per screen-width of hand travel
 const CRUSH_S = 0.5
 const TALK_S = 0.55
 
+// Hand cursors are fractions of the window; the 3D view is only part of it now.
+let canvasRect = { left: 0, top: 0, width: 1, height: 1 }
+function toCanvas(x, y) {
+  const cx = (x * window.innerWidth - canvasRect.left) / canvasRect.width
+  const cy = (y * window.innerHeight - canvasRect.top) / canvasRect.height
+  return { cx, cy, inside: cx >= 0 && cx <= 1 && cy >= 0 && cy <= 1 }
+}
+
 function aim(camera, x, y) {
   ndc.set(x * 2 - 1, -(y * 2 - 1))
   raycaster.setFromCamera(ndc, camera)
@@ -128,7 +136,8 @@ export function HandRig() {
       if (end) {
         // A quick pinch without moving is a tap: zoom to the part under it.
         if (p.insp && !p.insp.ui && p.insp.moved < 0.02 && world.inspectRoot) {
-          aim(camera, h.cursor.x, h.cursor.y)
+          const c = toCanvas(h.cursor.x, h.cursor.y)
+          aim(camera, c.cx, c.cy)
           const hit = raycaster.intersectObject(world.inspectRoot, true).find((x) => x.object.userData?.partIndex !== undefined)
           if (hit) focusPart(hit.object, hit.object.userData.partIndex)
         }
@@ -211,6 +220,7 @@ export function HandRig() {
   }, [camera, gl, controls])
 
   useFrame((_, delta) => {
+    canvasRect = gl.domElement.getBoundingClientRect()
     const now = performance.now()
     const dt = Math.min(delta, 0.05)
     const m = mouse.current
@@ -227,6 +237,7 @@ export function HandRig() {
       ...tracker.hands.map((h) => ({
         present: h.present,
         isHand: true,
+        ...toCanvas(h.cursor.x, h.cursor.y),
         x: h.cursor.x,
         y: h.cursor.y,
         pinch: h.present && h.gesture.pinch,
@@ -235,7 +246,7 @@ export function HandRig() {
         palm: h.gesture.palm,
         slot: h,
       })),
-      { present: m.present, isHand: false, x: m.x, y: m.y, pinch: m.down, fist: false, victory: false, palm: 1, slot: null },
+      { present: m.present, isHand: false, x: m.x, y: m.y, cx: m.x, cy: m.y, inside: true, pinch: m.down, fist: false, victory: false, palm: 1, slot: null },
     ]
 
     let hoverId = null
@@ -262,7 +273,7 @@ export function HandRig() {
       }
       setUiHover(p, ui)
 
-      const hit = p.grabId ? null : hitObject(camera, inp.x, inp.y)
+      const hit = p.grabId || !inp.inside ? null : hitObject(camera, inp.cx, inp.cy)
       if (hit && !hoverId && !ui) hoverId = hit.id
 
       if (pinchStart) {
@@ -286,7 +297,7 @@ export function HandRig() {
           ? p.dist * Math.pow(p.palm0 / Math.max(0.02, inp.palm), 1.3)
           : p.dist + m.wheel * 0.01
         const d = THREE.MathUtils.clamp(depth, 2.5, 20)
-        const ray = aim(camera, inp.x, inp.y)
+        const ray = aim(camera, inp.cx, inp.cy)
         p.target.copy(ray.origin).addScaledVector(ray.direction, d).add(p.offset)
         p.target.set(
           THREE.MathUtils.clamp(p.target.x, -10, 10),

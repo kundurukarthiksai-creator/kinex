@@ -59,7 +59,7 @@ export function AxisGizmo() {
   return (
     <nav
       aria-label="View axes"
-      className="panel fixed bottom-4 right-4 z-30 rounded-full sm:bottom-6 sm:right-6"
+      className="panel absolute bottom-4 right-4 z-30 rounded-full"
       style={{ width: SIZE, height: SIZE }}
     >
       <svg width={SIZE} height={SIZE} className="absolute inset-0" aria-hidden="true">

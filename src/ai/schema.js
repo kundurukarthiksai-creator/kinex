@@ -56,7 +56,26 @@ const modify = {
     rotateY: { type: 'number', description: 'turn by degrees around the vertical axis' },
     physics: { type: 'string', enum: PHYSICS },
     behavior,
-    parts: { type: 'array', items: part, description: 'only when the shape itself must change' },
+    parts: { type: 'array', items: part, description: 'replace ALL parts; only for a total redesign' },
+    addParts: { type: 'array', items: part, description: 'new parts to add to the object, in its local frame' },
+    editParts: {
+      type: 'array',
+      description: 'change existing parts by index',
+      items: {
+        type: 'object',
+        properties: {
+          index: { type: 'integer' },
+          color: { type: 'string' },
+          material: { type: 'string', enum: MATERIALS },
+          position: vec3,
+          rotation: vec3,
+          shape: { type: 'string', enum: SHAPES },
+          size: vec3,
+        },
+        required: ['index'],
+      },
+    },
+    removeParts: { type: 'array', items: { type: 'integer' }, description: 'indices of parts to delete' },
   },
   required: ['targetId'],
 }
@@ -77,14 +96,71 @@ export const RESPONSE_SCHEMA = {
   required: ['narration'],
 }
 
+// Conversation edits (top-level add / change / remove / scale) aimed at the focus model.
+export function focusEdit(plan, focusId) {
+  if (!focusId || !plan) return null
+  const has = Array.isArray(plan.add) || Array.isArray(plan.change) || Array.isArray(plan.paint) || plan.scale
+  const removeParts = Array.isArray(plan.remove) && plan.remove.every((v) => Number.isInteger(Number(v)) && typeof v !== 'string') ? plan.remove : null
+  if (!has && !removeParts) return null
+  // paint entries become color edits on each listed part
+  const painted = (Array.isArray(plan.paint) ? plan.paint : []).flatMap((p) =>
+    (Array.isArray(p?.indices) ? p.indices : []).map((index) => ({ index, color: p.color })),
+  )
+  const editParts = [...(Array.isArray(plan.change) ? plan.change : []), ...painted]
+  return { type: 'modify', targetId: focusId, addParts: plan.add, editParts, removeParts, scale: plan.scale }
+}
+
 // Turns a model response into the ordered action list the world understands.
-export function toActions(plan) {
+export function toActions(plan, focusId) {
   if (Array.isArray(plan?.actions)) return plan.actions // offline builder shape
   const actions = []
+  const edit = focusEdit(plan, focusId)
+  if (edit) actions.push(edit)
   if (plan?.clear) actions.push({ type: 'clear' })
-  for (const id of plan?.remove || []) actions.push({ type: 'delete', targetId: id })
+  if (!edit) for (const id of plan?.remove || []) actions.push({ type: 'delete', targetId: id })
   for (const m of plan?.modify || []) actions.push({ ...m, type: 'modify' })
   for (const s of plan?.spawn || []) actions.push({ ...s, position: s.at ?? s.position, type: 'spawn' })
   if (plan?.environment && (plan.environment.preset || plan.environment.gravity)) actions.push({ ...plan.environment, type: 'environment' })
   return actions
+}
+
+// Conversation mode: edits to the focus model. Keys sort so "add" streams first.
+export const EDIT_SCHEMA = {
+  type: 'object',
+  properties: {
+    // Sorts first, so the model plans the whole edit before writing it.
+    about: { type: 'string', description: 'plan first: which part indices change and how, and what is added' },
+    add: { type: 'array', items: part, description: 'new parts for the focus model, in its frame' },
+    change: {
+      type: 'array',
+      description: 'existing parts to change, by index; only the fields that change',
+      items: {
+        type: 'object',
+        properties: {
+          index: { type: 'integer' },
+          color: { type: 'string' },
+          material: { type: 'string', enum: MATERIALS },
+          position: vec3,
+          rotation: vec3,
+          shape: { type: 'string', enum: SHAPES },
+          size: vec3,
+        },
+        required: ['index'],
+      },
+    },
+    narration: { type: 'string', description: 'one short warm sentence saying what changed' },
+    paint: {
+      type: 'array',
+      description: 'recolor existing parts: every color change goes here',
+      items: {
+        type: 'object',
+        properties: { color: { type: 'string', description: '#RRGGBB' }, indices: { type: 'array', items: { type: 'integer' } } },
+        required: ['color', 'indices'],
+      },
+    },
+    remove: { type: 'array', items: { type: 'integer' }, description: 'indices of parts to delete' },
+    scale: { type: 'number', description: 'resize the whole model, 2 = twice as big' },
+    spawn: { type: 'array', items: spawn, description: 'only for a separate new object' },
+  },
+  required: ['about', 'narration'],
 }

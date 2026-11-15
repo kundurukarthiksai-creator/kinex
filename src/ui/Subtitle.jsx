@@ -6,6 +6,8 @@ export function Subtitle() {
   const subtitle = useKinex((s) => s.subtitle)
   const status = useKinex((s) => s.status)
   const narration = useKinex((s) => s.narration)
+  const chatOpen = useKinex((s) => s.chatOpen)
+  const listening = useKinex((s) => s.listening)
   const [fresh, setFresh] = useState(false)
 
   useEffect(() => {
@@ -27,6 +29,8 @@ export function Subtitle() {
           ? status.text
           : narration
 
+  // With the chat open, the conversation lives there; the stage only shows live speech.
+  if (chatOpen && !listening) return null
   const show = fresh && (subtitle.text || note)
   return (
     <div

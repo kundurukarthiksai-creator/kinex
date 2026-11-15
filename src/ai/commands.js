@@ -1,7 +1,8 @@
-import { useKinex, describeScene } from '../store.js'
+import { useKinex, describeScene, describeFocus } from '../store.js'
 import { planFromText, planFromImage, planDetail, hasLLM } from './llm.js'
 import { offlinePlan } from './fallback.js'
-import { applyActions, streamSpawns, streamDetail, resolveTarget, MAX_DETAILED_PARTS } from './apply.js'
+import { applyActions, streamSpawns, streamEdits, streamDetail, resolveTarget, MAX_DETAILED_PARTS } from './apply.js'
+import { toActions } from './schema.js'
 import { enterInspect, exitInspect, snapView, rotateModel, resetModelRotation } from '../lib/viewer.js'
 import { captureFrame } from '../lib/captureFrame.js'
 import { exportWorld } from '../lib/exportGltf.js'
@@ -15,46 +16,120 @@ function tagNew(source) {
   for (const o of useKinex.getState().objects) if (!o.source) o.source = source
 }
 
-function finish(plan, note, live, source) {
+const nameOf = (id) => useKinex.getState().objects.find((o) => o.id === id)?.name || 'model'
+const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s)
+
+// One line per change, shown under the assistant's reply.
+function notesFor(plan, focusId) {
   const st = useKinex.getState()
-  applyActions(plan, live)
+  const notes = []
+  for (const a of toActions(plan, focusId)) {
+    if (a.type === 'spawn') notes.push(`Built ${a.name || 'a model'} (${Array.isArray(a.parts) ? a.parts.length : 0} parts)`)
+    if (a.type === 'modify') {
+      const target = resolveTarget(a.targetId, st.objects)
+      const bits = []
+      if (a.addParts?.length) bits.push(`added ${a.addParts.length}`)
+      if (a.editParts?.length) bits.push(`changed ${a.editParts.length}`)
+      if (a.removeParts?.length) bits.push(`removed ${a.removeParts.length}`)
+      if (a.color) bits.push('recolored')
+      if (a.scale && Math.abs(Number(a.scale) - 1) > 0.01) bits.push(`resized ×${Number(a.scale).toFixed(1)}`)
+      if (a.parts?.length) bits.push(`rebuilt with ${a.parts.length} parts`)
+      if (a.behavior) bits.push(a.behavior.kind === 'none' ? 'stopped moving' : `now ${a.behavior.kind}s`)
+      if (bits.length && target) notes.push(`${cap(target.name)}: ${bits.join(', ')}`)
+    }
+    if (a.type === 'delete') notes.push('Removed a model')
+    if (a.type === 'clear') notes.push('Cleared the scene')
+    if (a.type === 'environment') notes.push([a.gravity && `Gravity: ${a.gravity}`, a.preset && `Light: ${a.preset}`].filter(Boolean).join(', '))
+  }
+  return notes
+}
+
+// Earlier turns for the AI, so follow-ups like "make it bigger" have context.
+function history() {
+  return useKinex
+    .getState()
+    .chat.filter((m) => m.status === 'done' && m.text)
+    .slice(-12)
+    .map((m) => ({ role: m.role, content: m.text }))
+}
+
+function finish(plan, note, live, source, replyId, edits, focusId) {
+  const st = useKinex.getState()
+  const notes = notesFor(plan, focusId) // before applying, while indices still match
+  applyActions(plan, live, edits, focusId)
   if (source) {
     tagNew(source)
     setTimeout(() => tagNew(source), 4000) // multi-object spawns land staggered
   }
-  st.set({ narration: note ? `${note} ${plan.narration || ''}`.trim() : plan.narration || '' })
+  const text = note ? `${note} ${plan.narration || ''}`.trim() : plan.narration || 'Done.'
+  st.set({ narration: text })
   st.setStatus('done', '')
+  if (replyId) st.editMessage(replyId, { text, status: 'done', notes })
+}
+
+// Live progress in the assistant's reply while parts stream in.
+function progress(replyId) {
+  let last = ''
+  return (live, edits) => {
+    const st = useKinex.getState()
+    const ids = [...live.values(), ...edits.values()].map((e) => e.id)
+    if (!ids.length) return
+    const total = ids.reduce((n, id) => n + (st.objects.find((o) => o.id === id)?.parts.length || 0), 0)
+    const text = `Building the ${nameOf(ids[0])}… ${total} parts`
+    if (text !== last) {
+      last = text
+      st.editMessage(replyId, { text })
+    }
+  }
 }
 
 export async function runCommand(raw) {
   const text = String(raw || '').trim()
   if (!text) return
   const st = useKinex.getState()
+  const earlier = history()
   st.setSubtitle(text, false)
+  st.say('user', text)
+  const reply = (msg, status = 'done') => st.say('assistant', msg, { status })
 
   // Local intents that never need the model.
   if (/^(export|download|save)( (it|this|the world|world|scene|everything|the model|model))?\.?$/i.test(text)) return exportNow()
   if (/\b(summon|scan|copy|replicate) (this|that|it)\b/i.test(text)) return summon()
-  if (inspectIntent(text)) return
+  const local = inspectIntent(text)
+  if (local) return local === 'silent' ? undefined : reply(typeof local === 'string' ? local : 'Done.')
   if (/\bmake (it|this|that|the \w+) (hd|real|realistic|high.?def(inition)?)\b|\b(hd|realistic) (version|model)\b/i.test(text)) {
     const target = resolveTarget(text.match(/the (\w+) (hd|real)/i)?.[1] || null, st.objects)
-    if (target) makeHD(target.id)
-    else st.setStatus('error', 'Build something first, then make it HD.')
-    return
+    if (!target) return reply('Build something first, then make it HD.', 'error')
+    makeHD(target.id)
+    return reply(`Making the ${target.name} in HD. It takes a few minutes, and you can keep building meanwhile.`)
   }
 
   busy++
   st.setStatus('thinking', 'Building')
   st.set({ narration: '' })
+  const replyId = st.say('assistant', 'Thinking…', { status: 'working' })
+  const live = new Map()
+  const edits = new Map()
+  const show = progress(replyId)
   try {
     if (!hasLLM) throw new Error('no key')
-    const live = new Map()
-    const plan = await planFromText(text, describeScene(), (p) => streamSpawns(p, live))
-    finish(plan, '', live, { text })
+    const focus = describeFocus()
+    const plan = await planFromText(
+      text,
+      describeScene(),
+      (p) => {
+        const a = streamSpawns(p, live)
+        const b = streamEdits(p, edits, focus?.id)
+        show(live, edits)
+        return a || b
+      },
+      { focus, history: earlier },
+    )
+    finish(plan, '', live, { text }, replyId, edits, focus?.id)
   } catch (err) {
     console.warn('[kinex] model failed, using offline builder:', err)
     const why = hasLLM ? "The AI didn't answer, so the offline builder took over." : 'No OPENAI_API_KEY in .env, so the offline builder took over.'
-    finish(offlinePlan(text), why)
+    finish(offlinePlan(text), why, undefined, undefined, replyId)
   } finally {
     busy--
     if (!busy && useKinex.getState().status.kind === 'thinking') st.setStatus('idle')
@@ -66,7 +141,9 @@ export async function summon() {
   if (useKinex.getState().scanning) return
   const frame = captureFrame()
   if (!frame) {
-    st.setStatus('error', 'Turn on the camera to summon a real object.')
+    const msg = 'Turn on Hands in the top bar to use the camera, then hold the object up and summon it.'
+    st.setStatus('error', msg)
+    st.say('assistant', msg, { status: 'error' })
     return
   }
   if (!hasLLM) {
@@ -76,13 +153,16 @@ export async function summon() {
   st.setSubtitle('Summon this', false)
   st.set({ scanning: true, narration: '' })
   st.setStatus('thinking', 'Scanning')
+  const replyId = st.say('assistant', 'Looking at what you are holding…', { status: 'working' })
   try {
     const live = new Map()
     const plan = await planFromImage(frame, describeScene(), (p) => streamSpawns(p, live))
-    finish(plan, '', live, { text: 'summon', photo: `data:image/jpeg;base64,${frame}` })
+    finish(plan, '', live, { text: 'summon', photo: `data:image/jpeg;base64,${frame}` }, replyId)
   } catch (err) {
     console.warn('[kinex] summon failed:', err)
-    st.setStatus('error', "Couldn't recognize that. Hold the object closer, in good light, and try again.")
+    const msg = "Couldn't recognize that. Hold the object closer, in good light, and try again."
+    st.setStatus('error', msg)
+    st.editMessage(replyId, { text: msg, status: 'error' })
   } finally {
     st.set({ scanning: false })
   }
@@ -92,12 +172,15 @@ export async function exportNow() {
   const st = useKinex.getState()
   if (!st.objects.length) {
     st.setStatus('error', 'Build something first, then export it.')
+    st.say('assistant', 'Build something first, then export it.', { status: 'error' })
     return
   }
   try {
     await exportWorld()
-    st.set({ narration: useKinex.getState().inspectId ? 'Your model is downloading as a .glb file.' : 'Your world is downloading as a .glb file.' })
+    const msg = useKinex.getState().inspectId ? 'Your model is downloading as a .glb file.' : 'Your world is downloading as a .glb file.'
+    st.set({ narration: msg })
     st.setStatus('done')
+    st.say('assistant', msg)
   } catch (err) {
     console.error(err)
     st.setStatus('error', 'Export failed. Try again in a second.')
@@ -119,44 +202,48 @@ export function inspectIntent(raw) {
       return true
     }
     enterInspect(target.id)
-    return true
+    return `Opened the ${target.name}. Drag to turn it, scroll to zoom, click a part to zoom in. Tell me what to change.`
+  }
+  // Only the bare phrase: "add a door with brass detail" is a specific edit for the AI.
+  if (/^(add (more )?details?|more details?|(make it )?(more )?detailed|refine( it)?)$/.test(t) && st.objects.length) {
+    addDetail()
+    return 'silent' // addDetail writes its own reply
   }
   if (!inspecting) return false
 
   if (/^(done|exit|close|back|leave|stop inspecting|go back)\b/.test(t)) {
     exitInspect()
-    return true
+    return 'Back to the world.'
   }
   const view = t.match(/\b(top|front|back|bottom|left|right|side|iso|isometric)\b.*\bview\b|^(?:show (?:the )?)?(top|front|back|bottom|left|right|side)$/)
   if (view) {
-    snapView((view[1] || view[2]).replace('isometric', 'iso'))
-    return true
+    const name = (view[1] || view[2]).replace('isometric', 'iso')
+    snapView(name)
+    return name === 'iso' ? 'Three-quarter view.' : `${name[0].toUpperCase()}${name.slice(1)} view.`
   }
   const rot = t.match(/\b(?:rotate|turn|spin|flip)\b(?:\s+(?:it|this|the model))?(?:\s+by)?\s*(-?\d+)?\s*(?:deg(?:rees)?|°)?\s*(?:on|around|about|along)?\s*(?:the\s+)?([xyz])(?:[\s-]*axis)?\b/)
   if (rot) {
-    rotateModel(rot[2], Number(rot[1] || 90))
-    return true
+    const deg = Number(rot[1] || 90)
+    rotateModel(rot[2], deg)
+    return `Turned it ${deg}° on ${rot[2].toUpperCase()}.`
   }
   if (/^reset$|\b(reset|straighten)\b.*\b(rotation|orientation|it|model)\b/.test(t)) {
     resetModelRotation()
-    return true
+    return 'Rotation reset.'
   }
   if (/\b(explode|exploded|take it apart|pull apart|break apart)\b/.test(t)) {
     st.setInspect({ explode: 1 })
-    return true
+    return 'Exploded, so you can see every part.'
   }
   if (/\b(assemble|put it back|collapse|unexplode)\b/.test(t)) {
     st.setInspect({ explode: 0 })
-    return true
+    return 'Put back together.'
   }
   const wire = t.match(/\bwire ?frame\b(?:\s+(on|off))?/)
   if (wire) {
-    st.setInspect({ wireframe: wire[1] ? wire[1] === 'on' : !st.inspect.wireframe })
-    return true
-  }
-  if (/\b(add|more)\b.*\bdetail|\bdetailed\b|\brefine\b/.test(t)) {
-    addDetail()
-    return true
+    const on = wire[1] ? wire[1] === 'on' : !st.inspect.wireframe
+    st.setInspect({ wireframe: on })
+    return on ? 'Wireframe on.' : 'Wireframe off.'
   }
   return false
 }
@@ -166,28 +253,35 @@ export async function addDetail(id) {
   const st = useKinex.getState()
   const obj = st.objects.find((o) => o.id === (id || st.inspectId || st.lastId))
   if (!obj || st.inspect.refining) return
-  if (!hasLLM) {
-    st.setStatus('error', 'Adding detail needs OPENAI_API_KEY in .env.')
-    return
+  const fail = (msg) => {
+    st.setStatus('error', msg)
+    st.say('assistant', msg, { status: 'error' })
   }
-  if (obj.parts.length >= MAX_DETAILED_PARTS) {
-    st.setStatus('error', `The ${obj.name} already has as much detail as Kinex can show (${MAX_DETAILED_PARTS} parts).`)
-    return
-  }
+  if (!hasLLM) return fail('Adding detail needs OPENAI_API_KEY in .env.')
+  if (obj.parts.length >= MAX_DETAILED_PARTS) return fail(`The ${obj.name} already has as much detail as Kinex can show (${MAX_DETAILED_PARTS} parts).`)
+  const replyId = st.say('assistant', `Adding detail to the ${obj.name}…`, { status: 'working' })
   st.setSubtitle(`More detail on the ${obj.name}`, false)
   st.set({ narration: '' })
   st.setStatus('thinking', 'Adding detail')
   st.setInspect({ refining: true })
   const live = { n: 0 }
   try {
-    const plan = await planDetail(obj, (p) => streamDetail(p, obj.id, live))
+    const count = () => useKinex.getState().objects.find((o) => o.id === obj.id)?.parts.length ?? 0
+    const plan = await planDetail(obj, (p) => {
+      const r = streamDetail(p, obj.id, live)
+      st.editMessage(replyId, { text: `Adding detail to the ${obj.name}… ${count()} parts` })
+      return r
+    })
     streamDetail(plan, obj.id, live)
-    const total = useKinex.getState().objects.find((o) => o.id === obj.id)?.parts.length ?? 0
-    st.set({ narration: `${plan.narration || 'Added detail.'} Now ${total} parts.` })
+    const text = plan.narration || 'Added detail.'
+    st.set({ narration: `${text} Now ${count()} parts.` })
     st.setStatus('done')
+    st.editMessage(replyId, { text, status: 'done', notes: [`${obj.name[0].toUpperCase()}${obj.name.slice(1)}: added ${live.n} details, now ${count()} parts`] })
   } catch (err) {
     console.warn('[kinex] add detail failed:', err)
-    st.setStatus('error', live.n ? `Added ${live.n} details before the AI stopped.` : "The AI didn't answer. Try Add detail again.")
+    const msg = live.n ? `Added ${live.n} details before the AI stopped.` : "The AI didn't answer. Try Add detail again."
+    st.setStatus('error', msg)
+    st.editMessage(replyId, { text: msg, status: 'error' })
   } finally {
     st.setInspect({ refining: false })
   }

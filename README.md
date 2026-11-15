@@ -18,6 +18,18 @@ Open http://localhost:5173 in **Chrome or Edge** (voice uses the Web Speech API)
 
 The AI runs on ASU's OpenAI-compatible server (`https://openai.rc.asu.edu/v1`, models `qwen38-27b` and `deepseek-v4-1-flash`). Any OpenAI-compatible server works: set `OPENAI_BASE_URL` and `OPENAI_MODEL`. The browser reaches the server through Vite's built-in proxy (`/llm`), which adds the key server-side, so run Kinex with `npm run dev` or `npm run preview`, not as static files. Without a key, Kinex falls back to an offline builder that knows a few shapes, so the demo never dies on bad Wi-Fi.
 
+## The screen
+
+- **Top bar**: gravity and light, *Open 3D file*, *Export*, and two switches on the right: **Hands** turns on the webcam and hand gestures (off by default), **Chat** opens the conversation.
+- **Chat (right)**: describe something, then keep talking to the same model: "make the towers taller", "add a drawbridge", "paint the roof blue", "remove the flag", "add detail". Each reply streams the change into the model live and lists what changed.
+- **Model (middle)**: never covered. Drag to orbit, scroll to zoom, double-click a model to inspect it.
+- **Inspect (left, when open)**: views, exact X / Y / Z turns, explode, wireframe, spin, *Make it HD*.
+
+### HD models and your own files
+
+- **Make it HD** turns the block model into a real textured 3D mesh: ASU's `flux-2` draws a reference picture (or your Summon photo is used) and `trellis-2` builds the mesh. It takes 2 to 4 minutes; a tray shows the picture and progress, the blocks stay until the mesh is ready, and finished meshes are cached in the browser.
+- **Open 3D file** (or drop a file on the page) views any `.glb`, `.gltf`, `.obj` or `.stl`.
+
 ## How to use it
 
 | You do | Kinex does |
