@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { partsBounds } from '../lib/viewer.js'
+import { applyAppearance } from './appearance.js'
 
 const gltf = new GLTFLoader()
 const cache = new Map() // url -> Promise<THREE.Object3D>
@@ -28,7 +29,7 @@ export function loadModel(url, format = 'glb') {
             ),
           )
         } else gltf.load(url, (g) => resolve(g.scene), undefined, reject)
-      }),
+      }).catch((error) => { cache.delete(url); throw error }),
     )
   }
   return cache.get(url)
@@ -51,18 +52,22 @@ function fit(scene, parts) {
 
 // Renders an HD (generated or imported) model in place of the block parts.
 // `fallback` (the block version) stays on screen until the mesh has loaded.
-export function HDModel({ url, format = 'glb', parts, wireframe = false, born, fallback = null }) {
+export function HDModel({ url, format = 'glb', parts, wireframe = false, born, fallback = null, appearance = {} }) {
   const [scene, setScene] = useState(null)
   const group = useRef()
   const appearAt = useRef(null)
 
+  useEffect(() => { appearAt.current=null },[url,format])
+
   useEffect(() => {
     let live = true
+    let owned
     loadModel(url, format)
       .then((s) => {
         if (!live) return
         // Own materials per copy, so wireframe in Inspect doesn't leak into the world.
         const copy = s.clone(true)
+        owned = copy
         copy.traverse((o) => {
           if (o.isMesh) o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone()
         })
@@ -71,8 +76,9 @@ export function HDModel({ url, format = 'glb', parts, wireframe = false, born, f
       .catch((e) => console.warn('[kinex] HD model failed to load', e))
     return () => {
       live = false
+      owned?.traverse((object) => { if (object.isMesh) (Array.isArray(object.material) ? object.material : [object.material]).forEach((material) => material.dispose()) })
     }
-  }, [url, format])
+  }, [url, format, appearance.color, appearance.material, JSON.stringify(appearance.partColors)])
 
   useEffect(() => {
     scene?.traverse((o) => {
@@ -80,7 +86,7 @@ export function HDModel({ url, format = 'glb', parts, wireframe = false, born, f
       o.castShadow = true
       o.receiveShadow = true
       const mats = Array.isArray(o.material) ? o.material : [o.material]
-      mats.forEach((m) => m && (m.wireframe = wireframe))
+      mats.forEach((m) => { if (m) { m.wireframe = wireframe; applyAppearance(m, { ...appearance, color:appearance.partColors?.[o.userData.kinexPart] || appearance.color }) } })
     })
   }, [scene, wireframe])
 

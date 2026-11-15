@@ -11,14 +11,15 @@ const ENV_MODEL = typeof __LLM_MODEL__ === 'undefined' ? '' : __LLM_MODEL__
 const GEMINI = typeof __LLM_PROVIDER__ !== 'undefined' && __LLM_PROVIDER__ === 'gemini'
 // deepseek-v4-1-flash with reasoning off starts writing in ~1s; qwen38-27b is the backup.
 const MODELS = GEMINI ? [ENV_MODEL || 'gemini-3.5-flash-lite'] : [...new Set([ENV_MODEL, 'deepseek-v4-1-flash', 'qwen38-27b'].filter(Boolean))]
-const IDLE_MS = 20000 // give up if the stream goes quiet this long
-const TOTAL_MS = 120000
+const IDLE_MS = 9000 // give up if the stream goes quiet this long
+const TOTAL_MS = 18000
 
 export const hasLLM = READY
 
 // Servers differ in what they accept, so start strict and fall back on a 400.
 // Each model remembers the first rung that worked.
 const LADDER = GEMINI ? [
+  { format: 'json_object', noThink: false, lean: true },
   { format: 'json_object', noThink: false },
   { format: null, noThink: false },
 ] : [
@@ -37,7 +38,8 @@ function body(model, messages, rung, maxTokens, schema) {
     model,
     messages,
     stream: true,
-    temperature: 0.7,
+    temperature: 0.45,
+    ...(GEMINI && rung.lean ? { reasoning_effort: 'minimal' } : {}),
     max_tokens: maxTokens,
     ...(rung.noThink ? { chat_template_kwargs: { enable_thinking: false, thinking: false } } : {}),
     ...(rung.format === 'json_schema'
@@ -63,10 +65,15 @@ export function extractJson(text) {
 }
 
 // Streams one completion. onText receives the full text so far after every chunk.
-async function streamOnce(model, messages, rung, onText, maxTokens, schema) {
+async function streamOnce(model, messages, rung, onText, maxTokens, schema, signal, deadline) {
+  signal?.throwIfAborted()
+  const remaining = deadline - Date.now()
+  if (remaining <= 0) throw new LLMError('The AI response budget was reached.')
   const ctrl = new AbortController()
+  const cancel = () => ctrl.abort()
+  signal?.addEventListener('abort', cancel, { once: true })
   let idle = setTimeout(() => ctrl.abort(), IDLE_MS)
-  const total = setTimeout(() => ctrl.abort(), TOTAL_MS)
+  const total = setTimeout(() => ctrl.abort(), remaining)
   let text = ''
   try {
     const res = await fetch(`${BASE}/chat/completions`, {
@@ -111,6 +118,7 @@ async function streamOnce(model, messages, rung, onText, maxTokens, schema) {
     }
     return text
   } catch (err) {
+    if (signal?.aborted) throw new DOMException('Creation canceled.', 'AbortError')
     if (err.name === 'AbortError') {
       const e = new LLMError('The model took too long to answer.')
       e.partial = text
@@ -121,11 +129,14 @@ async function streamOnce(model, messages, rung, onText, maxTokens, schema) {
   } finally {
     clearTimeout(idle)
     clearTimeout(total)
+    signal?.removeEventListener('abort', cancel)
   }
 }
 
-async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTokens = 4096, schema = RESPONSE_SCHEMA } = {}) {
+async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTokens = 4096, schema = RESPONSE_SCHEMA, signal, timeoutMs = TOTAL_MS } = {}) {
   if (!READY) throw new LLMError('No OPENAI_API_KEY in .env.')
+  signal?.throwIfAborted()
+  const deadline = Date.now() + timeoutMs
   const messages = [
     { role: 'system', content: system },
     { role: 'user', content: userContent },
@@ -143,17 +154,19 @@ async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTok
         if (onPartial?.(p)) built = true
       }
       try {
-        const text = await streamOnce(model, messages, LADDER[r], onText, maxTokens, schema)
+        const text = await streamOnce(model, messages, LADDER[r], onText, maxTokens, schema, signal, deadline)
         const plan = extractJson(text)
         rungFor.set(model, r)
         working = model
         return plan
       } catch (err) {
+        if (signal?.aborted) throw new DOMException('Creation canceled.', 'AbortError')
         lastErr = err
         console.warn(`[kinex] ${model} (rung ${r}) failed:`, String(err.message).slice(0, 200))
-        if (built) return parsePartial(err.partial) || last // keep what already appeared
+        if (built) return { ...(parsePartial(err.partial) || last), __partial: true } // keep what already appeared
         if (err.status === 401 || err.status === 403) throw err // bad key: nothing else will work
         // 400 = this request shape isn't supported: try a looser rung. Otherwise next model.
+        if (Date.now() >= deadline) throw err
         if (err.status !== 400) break
       }
     }
@@ -161,22 +174,24 @@ async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTok
   throw lastErr || new LLMError('The model failed.')
 }
 
-export function planFromText(text, scene, onPartial) {
-  return generate(userPrompt(text, scene), onPartial)
+export function planFromText(text, scene, onPartial, options = {}) {
+  const detailed = /realistic|detailed|intricate|high.detail/i.test(text)
+  const maxParts = detailed ? 64 : 32
+  return generate(userPrompt(text, scene), onPartial, { ...options, system: SYSTEM_PROMPT + `\nFor this request, you may use up to ${maxParts} parts. Prioritize silhouette, proportions and coherent materials. Avoid excessive tiny parts.`, maxTokens: detailed ? 8192 : 5120, schema: schemaForParts(maxParts) })
 }
 
-export function planFromImage(base64Jpeg, scene, onPartial, { maxParts = PHOTO_PARTS_LIMIT } = {}) {
+export function planFromImage(base64Jpeg, scene, onPartial, { maxParts = PHOTO_PARTS_LIMIT, signal } = {}) {
   return generate(
     [
       { type: 'text', text: `Reconstruct the object in this reference photograph using up to ${maxParts} parts. CURRENT SCENE:\n${JSON.stringify(scene)}` },
       { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Jpeg}` } },
     ],
     onPartial,
-    { system: SUMMON_PROMPT.replace('PART_LIMIT', String(maxParts)), maxTokens: maxParts > 24 ? 12288 : 6144, schema: schemaForParts(maxParts) },
+    { signal, timeoutMs: 35000, system: SUMMON_PROMPT.replace('PART_LIMIT', String(maxParts)), maxTokens: maxParts > 24 ? 12288 : 6144, schema: schemaForParts(maxParts) },
   )
 }
 
 // Asks for only NEW detail parts for an existing object, streamed like a spawn.
-export function planDetail(obj, onPartial) {
-  return generate(refinePrompt(obj), onPartial, { system: REFINE_PROMPT, maxTokens: 8192 })
+export function planDetail(obj, onPartial, options = {}) {
+  return generate(refinePrompt(obj), onPartial, { ...options, timeoutMs: 35000, system: REFINE_PROMPT, maxTokens: 8192 })
 }

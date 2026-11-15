@@ -2,7 +2,7 @@
 
 Create a 3D world with words. Reach in and make it yours.
 
-A browser spatial playground for **Sunhacks 9.0**: conversational scene creation, webcam hand controls, editable primitive models, 3D-file import, and a focused studio interface. This fork develops the studio experience separately from the [original Kinex project](https://github.com/kundurukarthiksai-creator/kinex).
+A browser spatial playground for **Sunhacks 9.0**: conversational scene creation, webcam hand controls, detailed local meshes, editable primitive models, 3D-file import, and a focused studio interface. This fork develops the studio experience separately from the [original Kinex project](https://github.com/kundurukarthiksai-creator/kinex).
 
 ## Run locally
 
@@ -28,17 +28,23 @@ OPENAI_MODEL=gemini-3.5-flash-lite
 
 The ASU compatible chat endpoint remains supported. Use its own key with `OPENAI_BASE_URL=https://openai.rc.asu.edu/v1` and an available model such as `qwen38-27b`.
 
-Without a chat key, curated starter scenes and the basic offline builder still work. Full prompt and photo reconstruction require a compatible AI service.
+Without a chat key, the local model library, curated starters, basic shapes, undo/redo, color and material changes, rotation and environment controls still work. Custom AI shapes and photo reconstruction require a compatible AI service. Browser speech recognition may itself require the browser’s online service.
 
 ## Studio experience
 
 - **Instant starters:** orbital playground, robot companion, solar system, and a small architectural scene. The first visit opens a working playground.
+- **Detailed model library:** a Kinex-authored cruise ship with a curved hull, passenger decks, windows, rails, lifeboats and eight color sections, plus locally bundled textured avocado, bottle and speaker assets. Model cards work without an AI request and open an inspection view that fits the model on desktop and mobile.
+- **Independent colors:** Coastal, Ocean and Coral ship palettes, section swatches, or commands such as “make the hull red and windows blue.” Color edits are saved and exported in standard glTF materials. Textured assets use a color tint that preserves their texture.
+- **Undo/redo:** toolbar controls, typed or spoken commands, and shortcuts. Each streamed AI build or continuous grab/resize is one edit; undo also restores live position, orientation, scale and model references. History retains the last 30 edits for this session.
+- **Learn panel:** a marine-design lesson, a buoyancy question and a guided 90-second presentation. The scene illustrates design; it does not simulate water or buoyancy.
 - **Create and Scene panels:** explore prompts, select objects, scale, duplicate, delete, or inspect them.
 - **Explicit Move and Rotate tools:** choose what a one-hand pinch does. Rotate works anywhere on the canvas for the selected object.
 - **Local autosave:** world name, objects, live positions, orientations, lighting and render settings are saved in IndexedDB. Imported mesh assets are saved with the scene. The save indicator reports when browser storage is unavailable.
-- **Camera control:** opt in, see the tracked skeleton and gesture hints, and switch the webcam fully off.
+- **Camera control:** opt in, see the tracked skeleton, live gesture feedback and measured inference rate, and switch the webcam fully off. MediaPipe normally runs in a worker with a 24 fps ceiling and a 640px inference frame; this leaves the high-resolution video available for photo capture. Browsers without compatible workers use a main-thread fallback. Invalid landmarks are filtered, hand assignments minimize total movement, and brief detection gaps have a 200ms grace period.
 - **Photo reconstruction:** preview and retake a still, then choose a quick build or a detailed reconstruction with up to 64 parts. Only the chosen still is sent to the AI.
 - **Rendering:** smooth surfaces, softer shadows, environment reflections, restrained bloom and High quality/Balanced controls.
+- **Fast, bounded commands:** common edits and simple recipes run locally. Custom AI requests stream parts, have an 18-second total budget (35 seconds for photos/refinement), and can be canceled. A failed connection enables a local fallback and a 30-second retry cooldown. Repeating a completed pure-creation request in the session reuses its cached AI plan. Partial geometry is retained and labeled if the stream stops.
+- **Voice lifecycle:** interim text previews, one submission of final text per session, clear microphone/network errors, retry support and cancellation of stale events.
 - **Responsive workspace:** a tools drawer on small screens, a focus mode for demonstrations, and a keyboard-accessible guide.
 - **Import and export:** open GLB, embedded GLTF, OBJ and STL models; export the world or inspected model as a binary GLB.
 
@@ -70,6 +76,8 @@ Mouse: drag an object in Move mode to grab it, use Rotate to turn the selection,
 | `F` | Toggle focus mode |
 | `Delete` / `Backspace` | Delete the selected or hovered object |
 | `X`, `Y`, `Z` in Inspect | Turn 15 degrees; Shift reverses the turn |
+| `Cmd/Ctrl + Z` | Undo a world edit (text inputs retain native text undo) |
+| `Cmd/Ctrl + Shift + Z` or `Ctrl + Y` | Redo |
 | `Cmd/Ctrl + S` | Save the current world locally |
 
 ## Photo detail and textured meshes
@@ -85,15 +93,22 @@ MESH_BASE_URL=https://openai.rc.asu.edu/v1
 
 When connected, **Make it HD** is available in Inspect mode. If chat already uses the ASU endpoint, its key is reused for this service unless a separate mesh key is supplied. A Gemini key is never sent to the ASU mesh service. Imported textured models work without this optional service.
 
-## A short demo
+## A 90-second educational demo
 
-1. Open the orbital playground and enable hands.
-2. Select Rotate, pinch, and turn the sculpture. Release: it keeps its orientation.
-3. Return to Move. Pick up an object; add a second hand to stretch and twist it.
-4. Describe “a castle with four towers and a red flag” and watch it assemble.
-5. Inspect it, change the view, explode its parts, or ask for more detail.
-6. Hold up a real object, preview its photo, and create a 3D approximation.
-7. Switch lighting, try zero gravity, and export the world.
+Open **Learn → Start the guided demo**. Starting a lab replaces the world; Undo can restore it.
+
+1. **0–15s:** create a realistic ship. Identify its curved hull, multiple passenger decks and lifeboats. This is an original deterministic Kinex mesh, loaded locally.
+2. **15–40s:** ask “Create a detailed lighthouse with a red roof, white tower and yellow lamp.” Watch actual custom AI geometry assemble. An outage falls back to the local lighthouse recipe.
+3. **40–65s:** select the ship and Rotate; enable hands, pinch thumb to index, drag and release. Then try a second hand to scale and twist in World mode.
+4. **65–90s:** inspect the ship, change its hull/windows or pick a palette, undo a change, and show wireframe. Explain buoyancy using the Learn question, then export the model.
+
+Check camera and microphone permissions on the demo laptop before presenting. Keep mouse controls and the local ship ready if venue lighting or speech recognition is unreliable.
+
+## Model provenance and limits
+
+The ship is generated reproducibly from native Three.js geometry by `node scripts/models/build-ship.mjs`. It is the detailed passenger-ship design offered by Kinex; it is not newly inferred from every prompt or reference image. Its eight material sections support independent colors. Other supported library subjects resolve to existing textured GLB files bundled locally. Their Microsoft CC0-1.0 notices and pinned source checksums are in `public/models/`.
+
+Novel subjects still use Gemini’s bounded primitive construction, and photo input still produces an approximation. Photorealistic arbitrary text-to-3D or accurate single-photo reconstruction needs a separate mesh-generation service; a chat API key alone does not provide it.
 
 ## Development and verification
 
@@ -107,4 +122,4 @@ Use Vite's dev or preview server for AI requests; a plain static server does not
 
 The app uses React, Vite, Three.js/React Three Fiber, Rapier, MediaPipe and a compatible streaming AI API. Hand tracking and cursor updates use a mutable frame loop rather than updating React every frame. Scene commands are validated and bounded before rendering. The tracker model and WASM are copied into `public/mediapipe` during installation, with CDN fallbacks.
 
-Tests cover gesture recognition, partial JSON, scene actions, detailed photo part budgets, viewport coordinate mapping, saved worlds and committed hand rotations. Browser checks also exercise the studio workflow, camera lifecycle, actual Gemini calls, GLB round trips, saved mesh assets and mobile navigation.
+Tests cover gesture recognition and hand continuity, partial JSON, scene actions, independent color parsing, detailed photo budgets, viewport coordinates, saved mesh appearance, atomic history, cancellation and voice lifecycle. Browser checks also exercise the studio workflow, camera lifecycle, actual Gemini calls, GLB round trips, saved mesh assets and mobile navigation.

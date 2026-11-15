@@ -37,3 +37,12 @@ describe('saved studio worlds', () => {
     expect(saved.position).toEqual([10, 0, 0])
   })
 })
+
+describe('saved detailed model appearance',()=>{
+  it('restores original ship metadata and independent color sections',()=>{
+    const ship=object();ship.source={assetId:'ship',kind:'procedural',photo:'never-store'};ship.appearance={partColors:{hull:'#E5484D',windows:'#2F5BFF',invalid:'#ffffff',funnel:'javascript:'}}
+    const restored=normalizeSavedObjects(serializeObjects([ship],new Map())).objects[0]
+    expect(restored.source.kind).toBe('procedural');expect(restored.source.author).toBe('Kinex');expect(restored.source.photo).toBeUndefined()
+    expect(restored.appearance.partColors).toEqual({hull:'#E5484D',windows:'#2F5BFF'});expect(restored.source.colorParts).toContain('decks')
+  })
+})

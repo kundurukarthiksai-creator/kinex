@@ -112,6 +112,7 @@ function Room() {
 
 function World() {
   const objects = useKinex((s) => s.objects)
+  const epoch = useKinex((s) => s.worldEpoch)
   const projectName = useKinex((s) => s.projectName)
   const inspecting = useKinex((s) => Boolean(s.inspectId))
   const root = useRef()
@@ -121,7 +122,7 @@ function World() {
   return (
     <group ref={root} name={projectName || 'world'} visible={!inspecting}>
       {objects.map((o) => (
-        <KinexObject key={o.id} obj={o} />
+        <KinexObject key={`${epoch}:${o.id}`} obj={o} />
       ))}
     </group>
   )

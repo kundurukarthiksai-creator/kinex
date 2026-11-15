@@ -59,7 +59,7 @@ export function enterInspect(id) {
   }
   inspectPose.q.identity()
   inspectPose.targetQ.identity()
-  st.set({ inspectId: id, lastId: id, hoverId: null })
+  st.set({ inspectId: id, lastId: id, hoverId: null, lessonChecks:{...st.lessonChecks,inspected:true} })
   st.setInspect({ explode: 0, wireframe: false, spin: false, focusPart: null })
   applyLimits(INSPECT_LIMITS)
   snapView('iso')
@@ -71,6 +71,7 @@ export function exitInspect() {
   st.set({ inspectId: null })
   st.setInspect({ explode: 0, wireframe: false, spin: false, focusPart: null })
   applyLimits(WORLD_LIMITS)
+  viewer.controls?.setFocalOffset(0,0,0,true)
   const s = viewer.saved
   if (s) viewer.controls?.setLookAt(s.position.x, s.position.y, s.position.z, s.target.x, s.target.y, s.target.z, true)
   viewer.saved = null
@@ -105,6 +106,9 @@ export function snapView(name) {
     dist = c.getPosition(new THREE.Vector3()).distanceTo(target)
     if (name === 'bottom') return // the floor is in the way
   }
+  // Keep the inspected subject above the command dock without changing its orbit center.
+  const offset = obj ? 2 * dist * Math.tan((viewer.camera?.fov ?? 40) * DEG / 2) * .10 : 0
+  c.setFocalOffset(0,offset,0,true)
   const d = new THREE.Vector3(...dir).normalize().multiplyScalar(dist)
   c.setLookAt(target.x + d.x, target.y + d.y, target.z + d.z, target.x, target.y, target.z, true)
   useKinex.getState().setInspect({ focusPart: null })

@@ -97,7 +97,7 @@ function InspectModel({ obj }) {
     <group ref={outer} onClick={onClick}>
       <group ref={model} scale={obj.scale} name={obj.name}>
         <group position={bounds.center.map((v) => -v)}>
-          {hdUrl && <HDModel url={hdUrl} format={hdFormat} parts={obj.parts} wireframe={wireframe} />}
+          {hdUrl && <HDModel url={hdUrl} format={hdFormat} parts={obj.parts} wireframe={wireframe} appearance={obj.appearance} />}
           {!hdUrl && obj.parts.map((p, i) => (
             <Part
               key={i}

@@ -62,8 +62,9 @@ function recipes(id) {
   ]
 }
 
-export function loadStarter(id) {
+export function loadStarter(id, { record = true } = {}) {
   if (useKinex.getState().status.kind === 'thinking') return
+  const token = record ? useKinex.getState().beginChange('Load starter scene') : null
   exitInspect()
   const starter = STARTERS.find((s) => s.id === id) || STARTERS[0]
   const objects = []
@@ -74,11 +75,14 @@ export function loadStarter(id) {
   })
   useKinex.getState().set({ objects, hd: {}, bursts: [], projectName: starter.name, lastId: objects[0]?.id, hoverId: null, heldIds: [], environment: { preset: 'studio', gravity: 'normal' }, narration: 'Your playground is ready. Grab an object, or describe what comes next.', status: { kind: 'done', text: '' } })
   viewer.controls?.setLookAt(0, 4.2, 13, 0, 1.4, 0, true)
+  if (token) useKinex.getState().commitChange(token)
 }
 
 export function newWorkspace() {
   if (useKinex.getState().status.kind === 'thinking') return
+  const token = useKinex.getState().beginChange('Start a new world')
   exitInspect()
   useKinex.getState().set({ objects: [], hd: {}, bursts: [], projectName: 'Untitled world', lastId: null, hoverId: null, heldIds: [], narration: '', subtitle: { text: '', interim: false, at: 0 }, status: { kind: 'idle', text: '' } })
   viewer.controls?.setLookAt(0, 4.2, 13, 0, 1.1, 0, true)
+  if (token) useKinex.getState().commitChange(token)
 }

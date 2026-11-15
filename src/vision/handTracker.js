@@ -1,14 +1,14 @@
-import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
 import { OneEuro } from './oneEuro.js'
 import { classify, cursorFrom, LM } from './gestures.js'
 import { useKinex } from '../store.js'
+import { validHands, matchHands } from './trackingMath.js'
 
 const BASE = import.meta.env.BASE_URL
 const LOCAL_WASM = `${BASE}mediapipe/wasm`
 const LOCAL_MODEL = `${BASE}mediapipe/hand_landmarker.task`
 const CDN_WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3/wasm'
 const CDN_MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
-const GRACE_MS = 140 // keep a hand alive through a dropped frame or two
+const GRACE_MS = 200 // keep a hand alive through a dropped frame or two
 
 function makeSlot(i) {
   return {
@@ -37,8 +37,15 @@ export const tracker = {
 let lastVideoTime = -1
 let fpsCount = 0
 let fpsAt = 0
+let worker = null
+let pendingWorker = null
+let workerBusy = false
+let lastInferenceAt = 0
+let frameErrors = 0
+const FRAME_MS = 1000 / 24
 
 async function createLandmarker(wasm, model, delegate) {
+  const {FilesetResolver,HandLandmarker}=await import('@mediapipe/tasks-vision')
   const files = await FilesetResolver.forVisionTasks(wasm)
   return HandLandmarker.createFromOptions(files, {
     baseOptions: { modelAssetPath: model, delegate },
@@ -99,9 +106,17 @@ async function boot(video) {
     video.playsInline = true
     tracker.video = video
     await video.play()
-    tracker.landmarker ??= await loadLandmarker()
+    const workerReady = await createInferenceWorker(ticket)
+    if (ticket !== generation) { stream.getTracks().forEach(track=>track.stop()); return }
+    if (!workerReady) {
+      const model=tracker.landmarker || await loadLandmarker()
+      if(ticket!==generation){if(model!==tracker.landmarker)model.close();return}
+      tracker.landmarker=model;st.set({trackingMode:'main'})
+    }
     if (ticket !== generation) { stream.getTracks().forEach((track) => track.stop()); return }
     tracker.running = true
+    fpsAt = performance.now()
+    fpsCount = 0
     st.set({ camera: 'on' })
     loopFrame = requestAnimationFrame(loop)
   } catch (err) {
@@ -117,6 +132,11 @@ export function stopTracker() {
   generation++
   starting = null
   tracker.running = false
+  pendingWorker?.cancel()
+  pendingWorker = null
+  worker?.terminate()
+  worker = null
+  workerBusy = false
   cancelAnimationFrame(loopFrame)
   tracker.video?.srcObject?.getTracks().forEach((track) => track.stop())
   if (tracker.video) { tracker.video.pause(); tracker.video.srcObject = null }
@@ -129,51 +149,98 @@ export function stopTracker() {
     hand.hold = 0
     hand.gesture = { ...hand.gesture, label: 'none', pinch: false, fist: false, victory: false }
   })
-  useKinex.getState().set({ camera: 'off', cameraError: '', handsSeen: 0, gestures: ['none', 'none'] })
+  useKinex.getState().set({ camera: 'off', cameraError: '', handsSeen: 0, gestures: ['none', 'none'], trackingMode: 'off', trackingFPS: 0, interactionMessage: '' })
+}
+
+function completedFrame(landmarks) {
+  const video = tracker.video
+  if (!tracker.running || !video) return
+  const now = performance.now()
+  process(landmarks, now, video.videoWidth / Math.max(1, video.videoHeight))
+  fpsCount++
+  if (now - fpsAt >= 1000) {
+    tracker.fps = Math.round(fpsCount * 1000 / Math.max(1, now - fpsAt))
+    fpsCount = 0
+    fpsAt = now
+    useKinex.getState().set({ trackingFPS: tracker.fps })
+  }
+}
+
+async function createInferenceWorker(ticket) {
+  if (!window.Worker || !window.createImageBitmap) return false
+  const candidate = new Worker(`${BASE}mediapipe/hand-worker.js`)
+  try {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Worker setup timed out')), 12000)
+      pendingWorker={candidate,cancel:()=>{clearTimeout(timeout);candidate.terminate();reject(new Error('Camera canceled'))}}
+      candidate.onerror = () => { clearTimeout(timeout); reject(new Error('Worker could not start')) }
+      candidate.onmessage = ({ data }) => {
+        if (data.type === 'ready') { clearTimeout(timeout); resolve() }
+        if (data.type === 'error') { clearTimeout(timeout); reject(new Error(data.message)) }
+      }
+      candidate.postMessage({ type: 'init', bundle: new URL(`${BASE}mediapipe/vision_bundle.js`, location.href).href, wasm: new URL(LOCAL_WASM, location.href).href, model: new URL(LOCAL_MODEL, location.href).href })
+    })
+    if(pendingWorker?.candidate===candidate)pendingWorker=null
+    if(ticket!==generation){candidate.terminate();return false}
+    worker = candidate
+    candidate.onmessage = ({ data }) => {
+      workerBusy = false
+      if (data.type === 'result') { frameErrors = 0; completedFrame(data.landmarks) }
+      if (data.type === 'frame-error' && ++frameErrors >= 3) fallbackToMain()
+    }
+    candidate.onerror = () => fallbackToMain()
+    useKinex.getState().set({ trackingMode: 'worker' })
+    return true
+  } catch (error) {
+    candidate.terminate()
+    if(pendingWorker?.candidate===candidate)pendingWorker=null
+    if(ticket!==generation)return false
+    console.info('[kinex] using compatible hand-tracking fallback:', error.message)
+    return false
+  }
+}
+
+async function fallbackToMain() {
+  const ticket=generation
+  worker?.terminate()
+  worker = null
+  workerBusy = false
+  if (!tracker.running) return
+  useKinex.getState().set({ trackingMode: 'starting' })
+  try {
+    tracker.landmarker ??= await loadLandmarker()
+    if (tracker.running && ticket===generation) useKinex.getState().set({ trackingMode: 'main' })
+  } catch { if(ticket!==generation)return;stopTracker(); useKinex.getState().set({ camera: 'error', cameraError: 'Hand tracking stopped. Try the camera again; mouse controls still work.' }) }
 }
 
 function loop() {
   if (!tracker.running) return
   loopFrame = requestAnimationFrame(loop)
-  const v = tracker.video
-  if (v.readyState < 2 || v.currentTime === lastVideoTime) return
-  lastVideoTime = v.currentTime
+  const video = tracker.video
   const now = performance.now()
-  let res
-  try {
-    res = tracker.landmarker.detectForVideo(v, now)
-  } catch (err) {
-    console.warn('[kinex] detect failed', err)
-    return
-  }
-  process(res?.landmarks || [], now, v.videoWidth / Math.max(1, v.videoHeight))
-  fpsCount++
-  if (now - fpsAt > 1000) {
-    tracker.fps = fpsCount
-    fpsCount = 0
-    fpsAt = now
+  if (!video || video.readyState < 2 || video.currentTime === lastVideoTime || now - lastInferenceAt < FRAME_MS || workerBusy) return
+  if (!worker && !tracker.landmarker) return
+  lastVideoTime = video.currentTime
+  lastInferenceAt = now
+  if (worker) {
+    workerBusy = true
+    const currentWorker = worker
+    const width = Math.min(640, video.videoWidth)
+    const height = Math.round(video.videoHeight * width / Math.max(1, video.videoWidth))
+    createImageBitmap(video, { resizeWidth: width, resizeHeight: height }).then((frame) => {
+      if (!tracker.running || worker !== currentWorker) { frame.close(); workerBusy = false; return }
+      currentWorker.postMessage({ type: 'frame', frame, timestamp: now }, [frame])
+    }).catch(() => { if(worker===currentWorker){workerBusy=false;if(++frameErrors>=3)fallbackToMain()} })
+  } else {
+    try { completedFrame(tracker.landmarker.detectForVideo(video, now).landmarks) }
+    catch (error) { console.warn('[kinex] skipped a tracking frame:', error.message) }
   }
 }
 
 function process(detections, now, aspect) {
   const slots = tracker.hands
-  const used = new Set()
-  // Match each detection to the slot whose wrist was closest last frame, so a
-  // held object never jumps between hands.
-  const assigned = detections.map((lm) => {
-    let best = -1
-    let bestD = Infinity
-    slots.forEach((s, i) => {
-      if (used.has(i)) return
-      const d = s.present ? Math.hypot(s.lm[0].x - lm[0].x, s.lm[0].y - lm[0].y) : 5 + i
-      if (d < bestD) {
-        bestD = d
-        best = i
-      }
-    })
-    used.add(best)
-    return [best, lm]
-  })
+  const assigned = matchHands(validHands(detections), slots)
+  const used = new Set(assigned.map(([index]) => index))
 
   for (const [i, raw] of assigned) {
     const s = slots[i]

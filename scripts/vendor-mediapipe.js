@@ -13,6 +13,8 @@ const MODEL_URL =
 
 mkdirSync(wasmDst, { recursive: true })
 cpSync(wasmSrc, wasmDst, { recursive: true })
+cpSync(join(root, 'node_modules/@mediapipe/tasks-vision/vision_bundle.js'), join(root, 'public/mediapipe/vision_bundle.js'))
+cpSync(join(root, 'src/vision/hand-worker.js'), join(root, 'public/mediapipe/hand-worker.js'))
 console.log('[kinex] mediapipe wasm copied')
 
 if (!existsSync(modelDst)) {

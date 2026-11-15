@@ -1,0 +1,34 @@
+[
+  {
+    "name": "Avocado",
+    "revision": "8f492390ddc7a2ae221a1369ef560589cf8c70fb",
+    "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/8f492390ddc7a2ae221a1369ef560589cf8c70fb/Models/Avocado/glTF-Binary/Avocado.glb",
+    "bytes": 8110040,
+    "sha256": "ccc9c3ce56423720b09399c2351537207cd5a65f859f9e6e2f30922762f3abd4",
+    "license": "CC0-1.0"
+  },
+  {
+    "name": "WaterBottle",
+    "revision": "8f492390ddc7a2ae221a1369ef560589cf8c70fb",
+    "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/8f492390ddc7a2ae221a1369ef560589cf8c70fb/Models/WaterBottle/glTF-Binary/WaterBottle.glb",
+    "bytes": 8966700,
+    "sha256": "b337e526fd6a162013c2984aeec163f5fbb4f717252724dfc3f3458bd51df94b",
+    "license": "CC0-1.0"
+  },
+  {
+    "name": "BoomBox",
+    "revision": "8f492390ddc7a2ae221a1369ef560589cf8c70fb",
+    "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/8f492390ddc7a2ae221a1369ef560589cf8c70fb/Models/BoomBox/glTF-Binary/BoomBox.glb",
+    "bytes": 10614184,
+    "sha256": "f8b918445ebdd006768232205a62f5182d2208ca57f84c6ccc084943c0bc8f15",
+    "license": "CC0-1.0"
+  },
+  {
+    "name": "CruiseShip",
+    "generator": "scripts/models/build-ship.mjs",
+    "author": "Kinex",
+    "kind": "original procedural geometry",
+    "bytes": 4772784,
+    "sha256": "0bf20d7ec90f763aec7efda7cb24831bd7ca63c97235191a0a75c93641ca5b8d"
+  }
+]

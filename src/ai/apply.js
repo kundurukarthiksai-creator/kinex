@@ -68,7 +68,7 @@ function freeSpot(pos, radius, objects) {
 }
 
 export function resolveTarget(ref, objects, focusFallback = true) {
-  const { hoverId, heldIds } = useKinex.getState()
+  const { hoverId, heldIds, lastId, inspectId } = useKinex.getState()
   if (ref) {
     const r = String(ref).toLowerCase()
     const exact = objects.find((o) => o.id.toLowerCase() === r)
@@ -77,7 +77,7 @@ export function resolveTarget(ref, objects, focusFallback = true) {
     if (byName) return byName
   }
   if (!focusFallback) return null
-  const focus = heldIds[0] || hoverId
+  const focus = inspectId || heldIds[0] || lastId || hoverId
   return objects.find((o) => o.id === focus) || objects.at(-1) || null
 }
 
@@ -143,7 +143,7 @@ export function applyActions(plan, live = new Map(), { maxParts = MAX_PARTS } = 
   let delay = 0
   let spawnIndex = -1
   for (const a of actions) {
-    const objects = [...useKinex.getState().objects, ...spawned]
+    const objects = [...useKinex.getState().objects]
     switch (a?.type) {
       case 'spawn': {
         spawnIndex++
@@ -164,9 +164,9 @@ export function applyActions(plan, live = new Map(), { maxParts = MAX_PARTS } = 
             obj.position = [tp[0] + Math.cos(ang) * d, Math.max(obj.position[1], tp[1] + 0.6), tp[2] + Math.sin(ang) * d]
           }
         }
+        obj.born += delay
         spawned.push(obj)
-        const add = () => useKinex.getState().addObject(obj)
-        delay ? setTimeout(add, delay) : add()
+        useKinex.getState().addObject(obj)
         delay += 260 + obj.parts.length * 30
         break
       }
@@ -178,6 +178,11 @@ export function applyActions(plan, live = new Map(), { maxParts = MAX_PARTS } = 
         if (a.color && HEX.test(a.color)) {
           const from = dominantColor(o)
           patch.parts = o.parts.map((p) => (p.color === from ? { ...p, color: a.color } : p))
+          patch.appearance = a.colorPart && o.source?.colorParts?.includes(a.colorPart) ? { ...o.appearance, partColors: { ...o.appearance?.partColors, [a.colorPart]:a.color } } : { ...o.appearance, color: a.color, partColors: undefined }
+        }
+        if (MATERIALS.includes(a.material)) {
+          patch.parts = (patch.parts || o.parts).map((part) => ({ ...part, material: a.material }))
+          patch.appearance = { ...(patch.appearance || o.appearance), material: a.material }
         }
         if (Array.isArray(a.parts) && a.parts.length) {
           patch.parts = buildObject({ ...a, position: o.position }, []).parts
@@ -189,20 +194,24 @@ export function applyActions(plan, live = new Map(), { maxParts = MAX_PARTS } = 
           patch.behavior = b
         }
         const body = bodies.get(o.id)
+        if (Array.isArray(a.translate)) {
+          const current = currentPos(o)
+          a.position = current.map((value, index) => value + num(a.translate[index], 0))
+        }
         if (Array.isArray(a.position)) {
           const p = vec(a.position, o.position)
           patch.position = [clamp(p[0], -6.5, 6.5), clamp(p[1], 0, 7), clamp(p[2], -5, 3)]
           body?.setTranslation({ x: patch.position[0], y: patch.position[1] + 0.05, z: patch.position[2] }, true)
         }
-        if (Number.isFinite(Number(a.rotateY))) {
-          const turn = Number(a.rotateY) * DEG
+        if (Number.isFinite(Number(a.rotateY)) || (['x', 'y', 'z'].includes(a.rotate?.axis) && Number.isFinite(a.rotate?.degrees))) {
+          const turn = clamp(Number(a.rotate?.degrees ?? a.rotateY), -720, 720) * DEG
           patch.rotationY = 0
           {
             const q = body?.rotation() || (o.quaternion ? { x: o.quaternion[0], y: o.quaternion[1], z: o.quaternion[2], w: o.quaternion[3] } : { x: 0, y: Math.sin((o.rotationY || 0) / 2), z: 0, w: Math.cos((o.rotationY || 0) / 2) })
-            const c = Math.cos(turn / 2)
-            const s = Math.sin(turn / 2)
-            // q' = rotY(turn) * q
-            const next = { w: c * q.w - s * q.y, x: c * q.x + s * q.z, y: c * q.y + s * q.w, z: c * q.z - s * q.x }
+            const c = Math.cos(turn / 2), s = Math.sin(turn / 2)
+            const axis = a.rotate?.axis || 'y'
+            const [x,y,z] = axis === 'x' ? [s,0,0] : axis === 'z' ? [0,0,s] : [0,s,0]
+            const next = { w:c*q.w-x*q.x-y*q.y-z*q.z, x:c*q.x+x*q.w+y*q.z-z*q.y, y:c*q.y-x*q.z+y*q.w+z*q.x, z:c*q.z+x*q.y-y*q.x+z*q.w }
             body?.setRotation(next, true)
             patch.quaternion = [next.x, next.y, next.z, next.w]
           }

@@ -23,7 +23,7 @@ export function SceneControls() {
   const environment = useKinex((s) => s.environment)
   const grid = useKinex((s) => s.showGrid)
   const thinking = useKinex((s) => s.status.kind === 'thinking')
-  const change = (key, value) => useKinex.getState().set({ environment: { ...useKinex.getState().environment, [key]: value } })
+  const change = (key, value) => useKinex.getState().setEnvironment({ [key]: value })
   return <div className="scene-controls" aria-label="World settings">
     <Dropdown label="Lighting" icon="sun" value={environment.preset} options={[["studio","Studio light"],["sunset","Golden hour"],["dawn","Soft dawn"],["night","Midnight"]]} onChange={(value) => change('preset',value)} disabled={thinking}/>
     <Dropdown label="Gravity" icon="gravity" value={environment.gravity} options={[["normal","Earth gravity"],["low","Moon gravity"],["zero","Zero gravity"]]} onChange={(value) => change('gravity',value)} disabled={thinking}/>

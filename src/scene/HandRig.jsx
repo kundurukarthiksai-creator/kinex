@@ -257,6 +257,7 @@ export function HandRig() {
     inputs.forEach((inp, i) => {
       const p = pointers.current[i]
       const slot = inp.slot
+      if (p.grabId && !bodies.has(p.grabId)) endGrab(p, now)
       if (!inp.present) {
         if (p.grabId) endGrab(p, now)
         setUiHover(p, null)

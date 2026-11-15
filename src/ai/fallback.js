@@ -7,6 +7,10 @@ const COLORS = {
 const P = (shape, size, position, color, material = 'plastic', rotation) => ({ shape, size, position, color, material, rotation })
 
 const RECIPES = {
+  cylinder: (c) => [P('cylinder',[1,1.5,1],[0,.75,0],c||COLORS.teal)],
+  cone: (c) => [P('cone',[1.4,1.8,1.4],[0,.9,0],c||COLORS.orange)],
+  torus: (c) => [P('torus',[1.7,1.7,.35],[0,.85,0],c||COLORS.gold,'metal')],
+  capsule: (c) => [P('capsule',[.8,1.7,.8],[0,.85,0],c||COLORS.purple)],
   sphere: (c) => [P('sphere', [1, 1, 1], [0, 0.5, 0], c || COLORS.blue)],
   ball: (c) => RECIPES.sphere(c),
   cube: (c) => [P('box', [1, 1, 1], [0, 0.5, 0], c || COLORS.orange)],
@@ -38,6 +42,16 @@ const RECIPES = {
     P('cone', [0.12, 0.4, 0.12], [0, 2.17, 0.4], '#F28C28', 'plastic', [90, 0, 0]),
     P('cylinder', [0.34, 0.4, 0.34], [0, 2.62, 0], '#23263A', 'matte'),
   ],
+  lighthouse: (c) => [
+    P('cylinder',[1.1,.2,1.1],[0,.1,0],'#A4A9A4','matte'),
+    P('cylinder',[.65,2.1,.65],[0,1.2,0],c||'#F4F7FB','matte'),
+    P('cylinder',[.69,.32,.69],[0,1.5,0],'#D86552','plastic'),
+    P('cylinder',[.88,.12,.88],[0,2.31,0],'#26343C','metal'),
+    P('cylinder',[.56,.45,.56],[0,2.58,0],'#FFC53D','glow'),
+    P('cone',[.92,.45,.92],[0,3.02,0],'#D86552','plastic'),
+    P('box',[.16,.34,.05],[0,.4,.34],'#243D4B','matte'),
+    ...[-.29,.29].flatMap(x=>[-.29,.29].map(z=>P('cylinder',[.035,.52,.035],[x,2.6,z],'#26343C','metal'))),
+  ],
   tower: (c) => [
     P('cylinder', [1.1, 2.6, 1.1], [0, 1.3, 0], c || '#C9C3B8', 'matte'),
     P('cylinder', [1.35, 0.3, 1.35], [0, 2.75, 0], '#B5AEA2', 'matte'),
@@ -58,24 +72,12 @@ const RECIPES = {
 }
 
 export function offlinePlan(text) {
-  const t = text.toLowerCase()
+  const t = text.toLowerCase().replace(/\bring\b/g, 'torus')
   const colorWord = Object.keys(COLORS).find((c) => t.includes(c))
   const c = colorWord ? COLORS[colorWord] : null
 
-  if (/\b(clear|reset|delete everything|remove everything)\b/.test(t)) return { narration: 'Clean slate.', actions: [{ type: 'clear' }] }
-  if (/\b(delete|remove|destroy)\b/.test(t)) return { narration: 'Gone.', actions: [{ type: 'delete' }] }
-  if (/zero.?g|no gravity|space|float away/.test(t)) return { narration: 'Gravity off. Everything drifts.', actions: [{ type: 'environment', gravity: 'zero' }] }
-  if (/moon|low gravity/.test(t)) return { narration: 'Moon gravity.', actions: [{ type: 'environment', gravity: 'low' }] }
-  if (/gravity/.test(t)) return { narration: 'Gravity is back.', actions: [{ type: 'environment', gravity: 'normal' }] }
-  for (const preset of ['night', 'sunset', 'dawn', 'studio']) {
-    if (t.includes(preset)) return { narration: `Switched to ${preset}.`, actions: [{ type: 'environment', preset }] }
-  }
-  if (/bigger|larger|grow/.test(t)) return { narration: 'Bigger.', actions: [{ type: 'modify', scale: 1.5 }] }
-  if (/smaller|shrink/.test(t)) return { narration: 'Smaller.', actions: [{ type: 'modify', scale: 0.66 }] }
-  if (/\bspin\b/.test(t)) return { narration: 'Spinning.', actions: [{ type: 'modify', behavior: { kind: 'spin' } }] }
-  if (colorWord && /\b(make|paint|turn|color)\b/.test(t)) return { narration: `Painted ${colorWord}.`, actions: [{ type: 'modify', color: c }] }
-
-  const key = Object.keys(RECIPES).find((k) => t.includes(k)) || 'cube'
+  const key = Object.keys(RECIPES).find((k) => new RegExp(`\\b${k}\\b`).test(t))
+  if (!key) return { narration: 'The offline builder supports spheres, cubes, cylinders, cones, rings, trees, houses, rockets and robots. Try one of those, or a model from the local library.', actions: [] }
   const glow = /glow|neon|light/.test(t)
   let parts = RECIPES[key](c)
   if (glow) parts = parts.map((p) => ({ ...p, material: 'glow' }))

@@ -10,6 +10,9 @@ export function CameraPiP({ onGuide }) {
   const video = useRef()
   const canvas = useRef()
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(max-width: 1100px)').matches)
+  const trackingFPS = useKinex(s=>s.trackingFPS)
+  const trackingMode = useKinex(s=>s.trackingMode)
+  const held = useKinex(s=>s.heldIds.length)
   const camera = useKinex((s) => s.camera)
   const cameraError = useKinex((s) => s.cameraError)
   const scanning = useKinex((s) => s.scanning)
@@ -44,7 +47,7 @@ export function CameraPiP({ onGuide }) {
   }, [camera, collapsed])
   const active = camera === 'on'
   const two = handsSeen === 2 && gestures.every((gesture) => gesture === 'pinch')
-  const feedback = !handsSeen ? 'Keep a hand in view to begin.' : two ? 'Spread to resize. Twist to turn.' : gestures.includes('pinch') ? inspecting || handTool === 'rotate' ? 'Move your pinched hand to rotate.' : 'Keep pinching to move your object.' : gestures.includes('fist') && handTool === 'rotate' ? 'Relax your fingers, then touch thumb to index.' : 'Touch thumb to index finger to pinch.'
+  const feedback = held && handTool==='rotate'?'Turning your model. Release to keep this angle.':held?'Holding your model. Add a second pinch to scale and turn.':!handsSeen ? 'Keep a hand in view to begin.' : two ? 'Spread to resize. Twist to turn.' : gestures.includes('pinch') ? inspecting || handTool === 'rotate' ? 'Move your pinched hand to rotate.' : 'Keep pinching to move your object.' : gestures.includes('fist') && handTool === 'rotate' ? 'Relax your fingers, then touch thumb to index.' : 'Touch thumb to index finger to pinch.'
   const modes = [
     ['pinch', inspecting || handTool === 'rotate' ? 'Pinch & drag' : 'Pinch', inspecting || handTool === 'rotate' ? 'Rotate in 3D' : 'Grab & move', inspecting || handTool === 'rotate' ? 'orbit' : 'hand'],
     ['two', 'Two hands', inspecting ? 'Zoom & roll' : 'Scale & rotate', 'expand'],
@@ -60,7 +63,7 @@ export function CameraPiP({ onGuide }) {
         {scanning && <div className="scanline"/>}
       </div>
       <div className="gesture-mini-list">{modes.map(([key,name,action,icon]) => <div key={key} className={(key === 'two' ? two : !two && gestures.includes(key)) ? 'gesture-active' : ''}><span className="gesture-mini-icon"><Icon name={icon} size={15}/></span><span><strong>{name}</strong><small>{action}</small></span><i/></div>)}</div>
-      {active && <p className="gesture-feedback" role="status">{feedback}</p>}
+      {active && <><p className="gesture-feedback" role="status">{feedback}</p><p className="tracking-performance">{trackingFPS || '…'} tracking fps · {trackingMode==='worker'?'Background tracking':trackingMode==='main'?'Compatibility mode':'Connecting'}</p></>}
       <button className="camera-guide-link" data-hand onClick={onGuide}>All gestures & shortcuts<Icon name="arrow" size={12}/></button>
       <p className="camera-privacy">Hand tracking stays on this device.<br/>Summon shares one photo when you choose it.</p>
     </div>

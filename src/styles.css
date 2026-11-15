@@ -524,3 +524,60 @@ kbd { font-family: inherit; border: 1px solid rgb(200 225 222 / .16); border-rad
 .reference-card > div > div { display: flex; gap: 9px; margin-top: 6px; }
 .reference-card button { border: 0; background: transparent; color: #c0e4ca; padding: 0; font-size: 8px; }
 .gesture-feedback { margin: 8px 12px 2px; padding: 7px 8px; background: #bde7ca09; border-left: 2px solid #a0d9b981; border-radius: 3px; color: #aac8b4; font-size: 9px; line-height: 1.7; }
+
+/* Detailed assets, editable ship materials and the small teaching walkthrough. */
+.history-controls { display:flex; gap:2px; }
+.history-controls button:disabled { opacity:.25; }
+.sidebar-tabs { gap:18px; }
+.model-library { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin:12px 0 25px; }
+.model-library button { position:relative; text-align:left; padding:13px 9px 10px; border:1px solid #c6ecd611; border-radius:9px; background:#253332; color:#d6e5dc; display:flex; flex-direction:column; gap:9px; }
+.model-library button:hover { background:#304540; border-color:#b7e7d555; }
+.model-library button > svg { position:absolute; right:7px; top:9px; color:#8fb2a2; }
+.model-library strong,.model-library small { display:block; }
+.model-library strong { font-size:11px; font-weight:500; }
+.model-library small { margin-top:3px; font-size:8px; color:#8eab9f; }
+.library-model-icon { display:grid; place-items:center; height:45px; width:100%; color:#b9dfd3; }
+.library-ship { color:#e2d7c4; }
+.library-avocado { color:#acc28a; }
+.library-bottle { color:#94bdd2; }
+.model-appearance { margin-top:16px; }
+.model-provenance { color:#b3c9bf; font-size:10px; line-height:1.5; }
+.model-provenance small { color:#839e92; font-size:8px; display:block; margin:4px 0 15px; }
+.ship-palettes { display:flex; gap:5px; margin-top:12px; }
+.ship-palettes button { flex:1; background:#ffffff06; border:1px solid #ffffff16; padding:8px 4px; border-radius:6px; color:#b8cfc3; font-size:9px; }
+.ship-palettes button > span { display:flex; justify-content:center; margin-bottom:6px; }
+.ship-palettes i { width:12px; height:12px; display:block; }
+.part-color-label { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:10px; color:#91b2a1; margin:16px 0 10px; }
+.part-color-label select { background:#263b34; color:#d0e7db; padding:5px; border:1px solid #ffffff1a; border-radius:4px; text-transform:capitalize; width:100px; }
+.color-swatches { display:flex; gap:7px; flex-wrap:wrap; }
+.color-swatches button { width:20px; height:20px; border:1px solid #ffffff30; border-radius:50%; }
+.color-swatches button:hover { outline:2px solid #c4f0dd; outline-offset:2px; }
+.model-color-hint { font-size:9px; color:#8ba395; line-height:1.6; margin:12px 0; }
+.learn-panel h2 { font-size:23px; line-height:1.2; margin-top:14px; letter-spacing:-.8px; }
+.lesson-fact { padding:15px; background:#2a3935; border:1px solid #ffffff12; border-radius:9px; margin:22px 0; }
+.lesson-fact > span { font-size:8px; letter-spacing:1.4px; color:#a4cabb; }
+.lesson-fact h3 { font-size:14px; margin:10px 0; color:#e0eade; }
+.lesson-fact p,.demo-card p { font-size:11px; line-height:1.7; color:#b0c6b8; }
+.lesson-fact small { display:block; margin-top:12px; font-size:9px; line-height:1.5; color:#8ba192; }
+.lesson-checks { padding:0; list-style:none; margin-bottom:22px; display:grid; gap:13px; }
+.lesson-checks li { display:flex; align-items:center; gap:9px; color:#90a79a; font-size:10px; }
+.lesson-checks li[data-done='true'] { color:#c3efda; }
+.lesson-question { color:#c5d7c9; font-size:11px; line-height:1.5; }
+.lesson-answers { display:flex; gap:5px; margin-top:10px; }
+.lesson-answers button { flex:1; padding:8px 3px; background:#ffffff08; border:1px solid #ffffff1a; color:#b4d0c2; font-size:9px; border-radius:5px; }
+.lesson-answers button[aria-pressed='true'] { border-color:#abddc4; }
+.lesson-answer { color:#c1d5c6; font-size:10px; margin-top:12px; line-height:1.5; }
+.learn-panel > .section-heading { margin-top:28px; }
+.demo-start { margin-top:15px; width:100%; font-size:11px; }
+.demo-card { border:1px solid #a4c9b433; border-radius:8px; padding:13px; margin-top:14px; }
+.demo-timing { display:flex; justify-content:space-between; color:#9cbdab; font-size:8px; letter-spacing:.5px; }
+.demo-card h3 { margin:14px 0 4px; font-size:15px; color:#d2e5d8; }
+.demo-card > small { color:#859f8e; font-size:9px; }
+.demo-card p { margin:12px 0; }
+.demo-card > button { width:100%; white-space:normal; font-size:10px; line-height:1.4; height:auto; padding:9px; }
+.demo-navigation { display:flex; align-items:center; justify-content:space-between; margin-top:15px; font-size:9px; color:#abc2b1; }
+.demo-navigation button { background:transparent; border:0; color:#abc2b1; padding:0; font-size:9px; }
+.voice-error { color:#eeb39d; font-size:10px; padding-top:10px; line-height:1.5; }
+.cancel-build { display:flex; align-items:center; gap:5px; background:#4e3f35; color:#f6d4b6; font-size:10px; padding:8px; border:1px solid #f1d4b529; border-radius:7px; }
+.tracking-performance { font-size:9px; color:#89aa9a; margin:9px 0; }
+@media(max-width:600px){ .viewport-toolbar { padding-left:8px; padding-right:8px; } .viewport-tools { gap:3px; } .history-controls .toolbar-icon { width:25px; } .viewport-toolbar .toolbar-divider { margin:0 2px; } }

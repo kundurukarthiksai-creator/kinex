@@ -3,61 +3,78 @@ import { runCommand } from '../ai/commands.js'
 
 const Recognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)
 export const hasSpeech = Boolean(Recognition)
+let recognition = null
+let session = 0
 
-let rec = null
-let finalText = ''
+const ERRORS = {
+  'not-allowed':'Allow microphone access in your browser, then try again.',
+  'service-not-allowed':'Voice input is blocked by this browser. Try Chrome or Edge, or type your command.',
+  'audio-capture':'No microphone was found. Connect a microphone or type your command.',
+  network:'Voice recognition could not reach its service. Try again or type; local scene commands still work.',
+  'no-speech':'No speech was heard. Tap the microphone and speak a short command.',
+}
 
 export function startListening() {
-  const st = useKinex.getState()
-  if (st.status.kind === 'thinking') return
-  if (!Recognition) {
-    st.setStatus('error', 'Voice needs Chrome or Edge. Type your request instead.')
-    return
+  const state=useKinex.getState()
+  if(state.status.kind==='thinking'||recognition)return
+  if(!Recognition){state.set({voiceState:'error',voiceError:'Voice is available in Chrome and Edge.'});state.setStatus('error','Voice is available in Chrome and Edge. You can type the same commands.');return}
+  const ticket=++session
+  const current=new Recognition()
+  recognition=current
+  const segments=new Map()
+  let failed=false,canceled=false,completed=false
+  current.lang='en-US'
+  current.interimResults=true
+  current.continuous=false
+  current.maxAlternatives=1
+  state.set({voiceState:'starting',voiceError:''})
+  current.onstart=()=>{
+    if(ticket!==session)return
+    state.set({listening:true,voiceState:'listening'})
+    state.setStatus('listening','Listening')
+    state.setSubtitle('',true)
   }
-  if (rec) return
-  finalText = ''
-  rec = new Recognition()
-  rec.lang = 'en-US'
-  rec.interimResults = true
-  rec.continuous = false
-  rec.maxAlternatives = 1
-  rec.onstart = () => {
-    st.set({ listening: true })
-    st.setStatus('listening', 'Listening')
-    st.setSubtitle('', true)
-  }
-  rec.onresult = (e) => {
-    let interim = ''
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const r = e.results[i]
-      if (r.isFinal) finalText += r[0].transcript
-      else interim += r[0].transcript
+  current.onresult=(event)=>{
+    if(ticket!==session)return
+    for(let index=event.resultIndex;index<event.results.length;index++){
+      const result=event.results[index]
+      segments.set(index,{text:result[0].transcript.trim(),final:result.isFinal})
     }
-    useKinex.getState().setSubtitle((finalText + interim).trim(), !!interim)
+    const ordered=[...segments].sort(([a],[b])=>a-b).map(([,value])=>value)
+    state.setSubtitle(ordered.map((value)=>value.text).join(' '),ordered.some((value)=>!value.final))
   }
-  rec.onerror = (e) => {
-    if (e.error === 'not-allowed') st.setStatus('error', 'Allow microphone access to talk to Kinex.')
-    else if (e.error !== 'no-speech' && e.error !== 'aborted') st.setStatus('error', `Voice stopped: ${e.error}.`)
+  current.onerror=(event)=>{
+    if(ticket!==session)return
+    if(event.error==='aborted'){canceled=true;return}
+    failed=true
+    const message=ERRORS[event.error]||'Voice input stopped. Tap the microphone to try again.'
+    state.set({voiceState:'error',voiceError:message})
+    state.setStatus('error',message)
   }
-  rec.onend = () => {
-    rec = null
-    useKinex.getState().set({ listening: false })
-    const text = finalText.trim()
-    if (text) runCommand(text)
-    else if (useKinex.getState().status.kind === 'listening') useKinex.getState().setStatus('idle')
+  current.onend=()=>{
+    if(ticket!==session||completed)return
+    completed=true
+    recognition=null
+    state.set({listening:false,voiceState:failed?'error':'idle'})
+    const text=[...segments].sort(([a],[b])=>a-b).filter(([,value])=>value.final).map(([,value])=>value.text).join(' ').trim()
+    if(!failed&&!canceled&&text){
+      runCommand(text)
+    }else if(!failed&&state.status.kind==='listening'){state.setStatus('idle');state.setSubtitle('',false)}
   }
-  try {
-    rec.start()
-  } catch {
-    rec = null
+  try{current.start()}
+  catch{
+    recognition=null
+    state.set({listening:false,voiceState:'error',voiceError:'The microphone could not start. Try again.'})
+    state.setStatus('error','The microphone could not start. Try again.')
   }
 }
 
-export function stopListening() {
-  rec?.stop()
+export function stopListening() { recognition?.stop() }
+export function cancelListening() {
+  session++
+  recognition?.abort()
+  recognition=null
+  useKinex.getState().set({listening:false,voiceState:'idle'})
 }
-
-export function toggleListening() {
-  if (rec) stopListening()
-  else startListening()
-}
+export function toggleListening() { if(recognition)stopListening();else startListening() }
+if(import.meta.hot)import.meta.hot.dispose(()=>cancelListening())

@@ -15,6 +15,14 @@ export const liveScale = new Map() // id -> multiplier during a two-hand stretch
 export const homes = new Map() // id -> {x,y,z} anchor for behaviors
 
 const getObj = (id) => useKinex.getState().objects.find((o) => o.id === id)
+let gestureChange = null
+
+function finishGesture() {
+  if (!held.size && gestureChange) {
+    useKinex.getState().commitChange(gestureChange)
+    gestureChange = null
+  }
+}
 
 // When the last part finishes its drop-in animation (parts streamed in carry their own born time).
 export function assemblyEnd(obj) {
@@ -37,7 +45,9 @@ function syncHeld() {
 
 export function grab(id) {
   const body = bodies.get(id)
-  if (!body) return false
+  const state = useKinex.getState()
+  if (!body || state.status.kind === 'thinking') return false
+  if (!held.size) gestureChange = state.beginChange('Manipulate object')
   held.set(id, (held.get(id) || 0) + 1)
   body.setBodyType(KINEMATIC, true)
   syncHeld()
@@ -54,7 +64,7 @@ export function release(id, velocity) {
   syncHeld()
   const body = bodies.get(id)
   const obj = getObj(id)
-  if (!body || !obj) return
+  if (!body || !obj) { finishGesture(); return }
   const t = body.translation()
   homes.set(id, { x: t.x, y: t.y, z: t.z, at: performance.now() })
   const q = body.rotation()
@@ -71,6 +81,8 @@ export function release(id, velocity) {
     const spin = Math.min(sp, max) * 0.35
     body.setAngvel({ x: velocity.z * 0.3, y: (Math.random() - 0.5) * spin, z: -velocity.x * 0.3 }, true)
   }
+  useKinex.getState().set({lessonChecks:{...useKinex.getState().lessonChecks,manipulated:true}})
+  finishGesture()
 }
 
 export function commitScale(id) {

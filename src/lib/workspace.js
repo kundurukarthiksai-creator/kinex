@@ -2,6 +2,7 @@ import { useKinex, bodies, newId } from '../store.js'
 import { sanitizePart } from '../ai/apply.js'
 import { PHYSICS, BEHAVIORS, PRESETS, GRAVITY } from '../ai/schema.js'
 import { loadStarter } from './starters.js'
+import { MODEL_CATALOG, modelURL } from '../hd/catalog.js'
 
 const DB = 'kinex-studio-workspace'
 const STORE = 'workspace'
@@ -52,7 +53,7 @@ export function serializeObjects(objects, liveBodies = bodies) {
       quaternion: q ? [q.x, q.y, q.z, q.w] : o.quaternion,
       born: 0,
       building: false,
-      source: { text: o.source?.text || o.name, ...(o.source?.file ? { file: o.source.file } : {}) },
+      source: { kind: o.source?.kind, text: o.source?.text || o.name, ...(o.source?.file ? { file: o.source.file } : {}), ...(o.source?.assetId ? {assetId:o.source.assetId,kind:o.source.kind} : {}) },
       parts: o.parts.map(({ born, ...part }) => part),
     }
   })
@@ -78,7 +79,8 @@ export function normalizeSavedObjects(objects) {
       behavior: { kind: BEHAVIORS.includes(o.behavior?.kind) ? o.behavior.kind : 'none', speed: clamp(o.behavior?.speed, 0.1, 4, 1), targetId: o.behavior?.targetId },
       parts: o.parts.map((part) => sanitizePart({ ...part, rotation: (part.rotation || [0, 0, 0]).map((v) => number(v) * 180 / Math.PI) })),
       rev: 0, born: 0,
-      source: { text: String(o.source?.text || name).slice(0, 2000), ...(o.source?.file ? { file: String(o.source.file).slice(0, 200) } : {}) },
+      appearance: {partColors:Object.fromEntries(Object.entries(o.appearance?.partColors || {}).filter(([key,value]) => MODEL_CATALOG.find((asset)=>asset.id===o.source?.assetId)?.colorParts?.includes(key) && /^#[0-9a-f]{6}$/i.test(value))),color:typeof o.appearance?.color==='string'&&/^#[0-9a-f]{6}$/i.test(o.appearance.color)?o.appearance.color:undefined,material:['metal','matte','plastic','glass','wood','glow'].includes(o.appearance?.material)?o.appearance.material:undefined},
+      source: { kind:['generated','offline','photo'].includes(o.source?.kind)?o.source.kind:undefined, text: String(o.source?.text || name).slice(0, 2000), ...(o.source?.file ? { file: String(o.source.file).slice(0, 200) } : {}), ...(MODEL_CATALOG.some((asset)=>asset.id===o.source?.assetId)?(() => { const a=MODEL_CATALOG.find((asset)=>asset.id===o.source.assetId); return {assetId:a.id,kind:a.kind||'library',author:a.author,license:a.license,url:a.source,colorParts:a.colorParts} })():{}) },
     }
   })
   normalized.forEach((o) => { o.behavior.targetId = ids.get(o.behavior.targetId) || null })
@@ -96,6 +98,7 @@ export function saveWorkspace() {
   st.set({ saveState: 'saving' })
   const task = async () => {
     const assets = await Promise.all(meshes.map(async ([id, h]) => {
+      if(h.libraryAsset)return {id,libraryAsset:h.libraryAsset,show:h.show}
       let blob = assetCache.get(h.url)
       if (!blob) {
         const response = await fetch(h.url)
@@ -123,6 +126,8 @@ export async function initializeWorkspace() {
       const hd = {}
       for (const asset of saved.assets || []) {
         const id = ids.get(asset.id)
+        const library = MODEL_CATALOG.find((model)=>model.id===asset.libraryAsset)
+        if(id&&library){hd[id]={status:'ready',url:modelURL(library),format:'glb',name:library.name,show:asset.show,libraryAsset:library.id,progress:100,dismissed:true};continue}
         if (!id || !(asset.blob instanceof Blob)) continue
         const url = URL.createObjectURL(asset.blob)
         assetCache.set(url, asset.blob)
@@ -130,9 +135,9 @@ export async function initializeWorkspace() {
       }
       useKinex.getState().set({ objects, hd, projectName: String(saved.projectName || 'Untitled world').slice(0, 60), lastId: objects[0]?.id || null, environment: { preset: PRESETS.includes(saved.environment?.preset) ? saved.environment.preset : 'studio', gravity: GRAVITY.includes(saved.environment?.gravity) ? saved.environment.gravity : 'normal' }, saveState: 'saved', savedAt: Date.now() })
       useKinex.getState().set({ renderQuality: saved.preferences?.renderQuality === 'balanced' ? 'balanced' : 'high', showGrid: saved.preferences?.showGrid !== false })
-    } else loadStarter('orbit')
+    } else loadStarter('orbit', { record: false })
   } catch {
-    loadStarter('orbit')
+    loadStarter('orbit', { record: false })
     useKinex.getState().set({ saveState: 'error' })
   }
   useKinex.getState().set({ workspaceReady: true })

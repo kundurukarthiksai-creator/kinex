@@ -1,3 +1,4 @@
+import { ModelAppearance, modelDescription } from './ModelAppearance.jsx'
 import { useKinex } from '../store.js'
 import { exitInspect, snapView, rotateModel, resetModelRotation, partsBounds } from '../lib/viewer.js'
 import { addDetail } from '../ai/commands.js'
@@ -63,10 +64,11 @@ export function InspectPanel() {
       <div>
         <h2 className="text-2xl font-semibold leading-tight tracking-[-0.02em] text-ink first-letter:uppercase">{obj.name}</h2>
         <p className="text-sm text-muted">
-          {showingHD ? 'HD model' : `${obj.parts.length} ${obj.parts.length === 1 ? 'part' : 'parts'}`}, {fmt(w)} × {fmt(h)} × {fmt(d)} m
+          {showingHD ? modelDescription(obj) : `${obj.parts.length} ${obj.parts.length === 1 ? 'part' : 'parts'}`}, {fmt(w)} × {fmt(h)} × {fmt(d)} m
         </p>
       </div>
 
+      <ModelAppearance key={obj.id} object={obj}/>
       <Row label="View">
         {VIEWS.map(([v, name]) => (
           <Btn key={v} onClick={() => snapView(v)}>
@@ -124,6 +126,7 @@ export function InspectPanel() {
           min="0"
           max="100"
           value={Math.round(inspect.explode * 100)}
+          disabled={showingHD}
           onChange={(e) => setInspect({ explode: Number(e.target.value) / 100 })}
           className="w-full accent-[#23263A]"
           aria-label="How far apart the parts spread"

@@ -152,7 +152,7 @@ function KinexObject({ obj }) {
       >
         {(() => {
           const blocks = obj.parts.map((p, i) => <Part key={i} part={p} index={i} born={obj.born} hovered={hovered} />)
-          return hdUrl ? <HDModel url={hdUrl} format={hdFormat} parts={obj.parts} fallback={blocks} /> : blocks
+          return hdUrl ? <HDModel url={hdUrl} format={hdFormat} parts={obj.parts} appearance={obj.appearance} fallback={blocks} /> : blocks
         })()}
       </group>
     </RigidBody>

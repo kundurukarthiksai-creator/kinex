@@ -57,6 +57,7 @@ describe('inspectIntent', () => {
   it('leaves normal requests to the AI', () => {
     seed()
     expect(inspectIntent('make the flag blue')).toBe(false)
+    expect(inspectIntent('Create a detailed lighthouse')).toBe(false)
     useKinex.setState({ inspectId: null })
     expect(inspectIntent('rotate 90 on x')).toBe(false)
   })
