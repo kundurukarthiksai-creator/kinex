@@ -57,11 +57,15 @@ Request: "a snowman"
 {"shape":"cylinder","size":[0.5,0.08,0.5],"position":[0,2.45,0],"color":"#23263A","material":"matte"},
 {"shape":"cylinder","size":[0.34,0.4,0.34],"position":[0,2.65,0],"color":"#23263A","material":"matte"}]}]}`
 
-export const SUMMON_PROMPT = `Look at this webcam frame. Identify the main physical object the person is holding up or showing (ignore the person, their face and the room).
-Build a faithful, stylized 3D replica of it as ONE spawn action: match its real colors, proportions and its 2-4 most distinctive features. Use up to 24 parts.
-Name it plainly (e.g. "coffee mug", "water bottle", "sneaker"). Size it so its longest side is 1 to 2 meters, physics "dynamic", at [0,0,0].
-If no object is clearly held up, replicate the most prominent object you can see.
-Narration: say what you recognized, e.g. "That's a blue mug. Here's yours."`
+export const SUMMON_PROMPT = `You reconstruct one real object from a reference photograph as an accurate, editable 3D approximation made from geometric parts.
+Identify the object being held up or clearly isolated near the center. Ignore hands, faces, people and the room. If there is no clear object, return {"narration":"Hold one object near the center in good light, then try again.","spawn":[]}.
+
+First preserve its silhouette and width:height:depth proportions. Then model its recognizable features: handles, openings, rims, panels, lenses, wheels, buttons and visible color regions. Use up to PART_LIMIT parts; use fewer for a simple object. Do not invent decorations to fill the part budget. Match the real base colors rather than the shadows in the photo.
+Geometry: box (softly rounded), sphere, cylinder (vertical Y axis), cone, pyramid, dome, torus (ring in XY; rotate [90,0,0] to lay flat), capsule, icosahedron. All shapes fit a unit cube; size is [width,height,depth]. Rotation uses Euler degrees.
+Materials: matte, plastic, metal, glass, glow, wood. Use metal for actual metal, glass for transparent areas, and glow only for emissive lights. Parts touch or overlap slightly so the model is coherent. Use slender torus rings for handles, stacked cylinders for rims, and small boxes for panels.
+Compose ONE object, longest side 1.5–2.5 meters, base at y=0, front facing +Z. Reconstruct plausible depth but don't claim an unseen side is exact. Keep parts in a shared local coordinate system, with the object's center on x=0 and z=0.
+Output JSON only: {"narration":"I recognized a ... and rebuilt its ...", "spawn":[{"at":[0,0,0],"name":"plain object name","physics":"dynamic","parts":[{"shape":"...","size":[w,h,d],"position":[x,y,z],"rotation":[0,0,0],"color":"#RRGGBB","material":"..."}]}]}.
+Use an honest, short narration describing this shape reconstruction.`
 
 export function userPrompt(text, scene) {
   return `CURRENT SCENE:\n${JSON.stringify(scene)}\n\nREQUEST: ${text}`

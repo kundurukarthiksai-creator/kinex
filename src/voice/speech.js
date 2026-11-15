@@ -9,6 +9,7 @@ let finalText = ''
 
 export function startListening() {
   const st = useKinex.getState()
+  if (st.status.kind === 'thinking') return
   if (!Recognition) {
     st.setStatus('error', 'Voice needs Chrome or Edge. Type your request instead.')
     return

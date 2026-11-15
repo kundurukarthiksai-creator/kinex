@@ -70,38 +70,71 @@ async function loadLandmarker() {
 }
 
 let starting = null
+let generation = 0
+let loopFrame = 0
 export function startTracker(video) {
   if (tracker.running) return Promise.resolve()
-  starting ??= boot(video).finally(() => (starting = null))
+  if (!video) return Promise.resolve()
+  if (!starting) {
+    const pending = boot(video)
+    starting = pending
+    pending.finally(() => { if (starting === pending) starting = null })
+  }
   return starting
 }
 
 async function boot(video) {
+  const ticket = ++generation
   const st = useKinex.getState()
-  st.set({ camera: 'starting' })
+  st.set({ camera: 'starting', cameraError: '' })
+  let stream
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user', frameRate: { ideal: 30 } },
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user', frameRate: { ideal: 30 } },
       audio: false,
     })
+    if (ticket !== generation) { stream.getTracks().forEach((track) => track.stop()); return }
     video.srcObject = stream
     video.muted = true
     video.playsInline = true
-    await video.play()
     tracker.video = video
+    await video.play()
     tracker.landmarker ??= await loadLandmarker()
+    if (ticket !== generation) { stream.getTracks().forEach((track) => track.stop()); return }
     tracker.running = true
     st.set({ camera: 'on' })
-    requestAnimationFrame(loop)
+    loopFrame = requestAnimationFrame(loop)
   } catch (err) {
+    stream?.getTracks().forEach((track) => track.stop())
+    if (ticket !== generation) return
     console.error('[kinex] camera/tracker failed', err)
-    st.set({ camera: err?.name === 'NotAllowedError' ? 'denied' : 'error' })
+    const denied = err?.name === 'NotAllowedError'
+    st.set({ camera: denied ? 'denied' : 'error', cameraError: denied ? 'Allow camera access in your browser, then try again.' : err?.name === 'NotFoundError' ? 'Connect a webcam to use hand controls. Mouse controls still work.' : 'We couldn’t start hand tracking. Try the camera again.' })
   }
+}
+
+export function stopTracker() {
+  generation++
+  starting = null
+  tracker.running = false
+  cancelAnimationFrame(loopFrame)
+  tracker.video?.srcObject?.getTracks().forEach((track) => track.stop())
+  if (tracker.video) { tracker.video.pause(); tracker.video.srcObject = null }
+  tracker.video = null
+  tracker.fps = 0
+  lastVideoTime = -1
+  tracker.hands.forEach((hand) => {
+    hand.present = false
+    hand.mode = 'idle'
+    hand.hold = 0
+    hand.gesture = { ...hand.gesture, label: 'none', pinch: false, fist: false, victory: false }
+  })
+  useKinex.getState().set({ camera: 'off', cameraError: '', handsSeen: 0, gestures: ['none', 'none'] })
 }
 
 function loop() {
   if (!tracker.running) return
-  requestAnimationFrame(loop)
+  loopFrame = requestAnimationFrame(loop)
   const v = tracker.video
   if (v.readyState < 2 || v.currentTime === lastVideoTime) return
   lastVideoTime = v.currentTime
@@ -172,3 +205,5 @@ function process(detections, now, aspect) {
 }
 
 export { LM }
+
+if (import.meta.hot) import.meta.hot.dispose(() => stopTracker())

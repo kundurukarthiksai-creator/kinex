@@ -1,83 +1,110 @@
-# Kinex
+# Kinex Studio
 
-**Speak a world into existence, then sculpt it with your bare hands.**
+Create a 3D world with words. Reach in and make it yours.
 
-Kinex runs in the browser with nothing but a webcam. You say what you want ("a castle with a red flag", "a solar system") and an LLM acts as an architect: it composes the object out of primitives and it assembles in front of you, piece by piece. Then you reach out and pinch it, throw it, stretch it with two hands, or crush it with your fist. Hold a real object up to the camera, say "summon this", and Kinex builds a 3D copy of it.
+A browser spatial playground for **Sunhacks 9.0**: conversational scene creation, webcam hand controls, editable primitive models, 3D-file import, and a focused studio interface. This fork develops the studio experience separately from the [original Kinex project](https://github.com/kundurukarthiksai-creator/kinex).
 
-No headset. No mouse. No install.
+## Run locally
 
-## Run it
+Use Node.js 22.12 or later.
 
 ```bash
-npm install          # also copies the hand-tracking model into /public for offline use
-cp .env.example .env # then paste your key: OPENAI_API_KEY=...
+npm ci
+cp .env.example .env
 npm run dev
 ```
 
-Open http://localhost:5173 in **Chrome or Edge** (voice uses the Web Speech API). Allow the camera and microphone.
+Open the local URL printed by Vite in Chrome or Edge. The webcam starts only when you choose **Enable hands**. Mouse and keyboard controls also work.
 
-The AI runs on ASU's OpenAI-compatible server (`https://openai.rc.asu.edu/v1`, models `qwen38-27b` and `deepseek-v4-1-flash`). Any OpenAI-compatible server works: set `OPENAI_BASE_URL` and `OPENAI_MODEL`. The browser reaches the server through Vite's built-in proxy (`/llm`), which adds the key server-side, so run Kinex with `npm run dev` or `npm run preview`, not as static files. Without a key, Kinex falls back to an offline builder that knows a few shapes, so the demo never dies on bad Wi-Fi.
+For Gemini, put these settings in the ignored `.env` file:
 
-## How to use it
-
-| You do | Kinex does |
-|---|---|
-| Type or say what to build | The model composes it from up to 24 primitives, with scene memory ("make it bigger", "put a tree next to the house") |
-| **Pinch** an object | Grab it. Move your hand closer to the camera to pull it toward you |
-| **Release** while moving | Throw it. Physics takes over |
-| **Pinch with both hands** | Stretch to scale, twist to turn |
-| **Hold a fist** over an object | Crush it |
-| **Hold a peace sign** | Start talking (hands-free mic) |
-| **Pinch a button** | Click it. The whole UI is touchless |
-| "Summon from camera" / "summon this" | The model looks at the camera frame, recognizes what you're holding, and builds a replica |
-| "Turn off gravity", "make it night" | Change the world: Earth, Moon or zero gravity; studio, sunset, dawn or night light |
-| "Export" | Downloads your world as `kinex-world.glb` |
-
-### Inspect: see any model from every side
-
-Double-click a model, press `I`, pinch **Inspect the …**, or say "inspect the castle". The world hides, physics pauses, and the model floats in the studio with its own X / Y / Z axes.
-
-| Do | What happens |
-|---|---|
-| Pinch and drag (one hand) | Tumble the model in any direction |
-| Pinch with both hands | Spread to zoom, twist to roll |
-| Quick pinch or click on a part | Zoom onto that part and see its shape, material, color and size |
-| Axis gizmo (bottom right) | Tap X / Y / Z to look along that axis |
-| Panel: Top / Front / Side / 3⁄4 | Snap the camera |
-| Panel: Turn X / Y / Z ±15° ±90°, or keys `X` `Y` `Z` (Shift reverses) | Rotate on an exact axis |
-| Explode, Spread slider, Wireframe, Spin | See how the model is put together |
-| **Add detail**, or say "add detail" | The AI adds 25–60 small parts (trims, frames, bolts, windows) that stream in while you watch, up to 96 parts |
-| Say "rotate 90 on x", "top view", "explode", "wireframe on" | Instant, no AI round-trip |
-| `Done`, `Esc`, or "done" | Back to the world, unchanged |
-
-The mouse works too: drag objects to throw them, drag empty space to orbit, scroll while holding to push and pull. `/` focuses the input, `M` toggles the mic, and `Delete` removes the hovered object.
-
-## 90-second demo script
-
-1. "A castle with a red flag." Watch it assemble block by block.
-2. Pinch the castle, lift it, and throw it across the room.
-3. "Put a dragon next to the castle." Scene memory places it.
-4. Two-hand pinch the dragon: stretch it huge, twist it around.
-5. Pinch **Gravity: Off** in the toolbar. Everything floats.
-6. Hold up a mug (or a shoe, a bottle): "Summon this." A 3D copy appears.
-7. Make a fist over the mug to crush it. Peace sign: "Make it night."
-8. "Inspect the castle." Turn it on every axis, explode it, then "add detail" and watch it get richer.
-9. "Export." The world (or, in Inspect, just the model) downloads as a .glb file.
-
-## How it works
-
-- **React + Vite**, **three.js** via React Three Fiber, **Rapier** physics, bloom postprocessing.
-- **MediaPipe HandLandmarker** (two hands, GPU) runs in its own loop and writes into a mutable ref, not React state, so tracking never triggers re-renders. Landmarks pass through a **One Euro filter**. Gestures are normalized by palm size and use **hysteresis**, so pinches don't flicker.
-- An **OpenAI-compatible LLM** (`deepseek-v4-1-flash` with reasoning off, `qwen38-27b` as backup, on ASU's server) **streams** a JSON plan, and a tolerant partial-JSON parser drops each part into the scene the moment it's written, so you watch objects build themselves. The plan has spawn, modify, remove, clear and environment. Kinex asks for strict JSON-schema output, falls back to JSON mode or plain text if the server doesn't support it, and remembers what worked. Every response is validated and clamped before it touches the scene. The current scene is sent along, so pronouns and "the red one" resolve.
-- Objects are compound rigid bodies with colliders generated from their parts. They stay upright until you throw them hard enough to tumble.
-
-```
-src/
-  ai/        prompt, schema, LLM client, action validator, offline builder
-  vision/    hand tracker, One Euro filter, gesture classifier (+ tests)
-  scene/     stage, objects, parts, hand rig (grab / throw / stretch / crush)
-  ui/        command bar, camera picture-in-picture, subtitles, hand cursors
-  voice/     speech recognition
+```env
+OPENAI_API_KEY=YOUR_GEMINI_API_KEY
+OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+OPENAI_MODEL=gemini-3.5-flash-lite
 ```
 
-`npm test` runs the gesture and JSON-parsing tests.
+`OPENAI_API_KEY` is the variable name used by the compatible client; the key above belongs to Gemini. The local server forwards requests to the configured provider and adds its key. Credentials are not included in browser assets. Restart the server after changing credentials.
+
+The ASU compatible chat endpoint remains supported. Use its own key with `OPENAI_BASE_URL=https://openai.rc.asu.edu/v1` and an available model such as `qwen38-27b`.
+
+Without a chat key, curated starter scenes and the basic offline builder still work. Full prompt and photo reconstruction require a compatible AI service.
+
+## Studio experience
+
+- **Instant starters:** orbital playground, robot companion, solar system, and a small architectural scene. The first visit opens a working playground.
+- **Create and Scene panels:** explore prompts, select objects, scale, duplicate, delete, or inspect them.
+- **Explicit Move and Rotate tools:** choose what a one-hand pinch does. Rotate works anywhere on the canvas for the selected object.
+- **Local autosave:** world name, objects, live positions, orientations, lighting and render settings are saved in IndexedDB. Imported mesh assets are saved with the scene. The save indicator reports when browser storage is unavailable.
+- **Camera control:** opt in, see the tracked skeleton and gesture hints, and switch the webcam fully off.
+- **Photo reconstruction:** preview and retake a still, then choose a quick build or a detailed reconstruction with up to 64 parts. Only the chosen still is sent to the AI.
+- **Rendering:** smooth surfaces, softer shadows, environment reflections, restrained bloom and High quality/Balanced controls.
+- **Responsive workspace:** a tools drawer on small screens, a focus mode for demonstrations, and a keyboard-accessible guide.
+- **Import and export:** open GLB, embedded GLTF, OBJ and STL models; export the world or inspected model as a binary GLB.
+
+The local save is specific to this browser and origin. Use Export to keep a portable copy. Camera reference photos are excluded from automatic project saves.
+
+## Hand controls
+
+| Tool or gesture | Action |
+| --- | --- |
+| Move + pinch over an object | Grab and move it; move toward the camera to bring it closer. |
+| Release a moving grab | Throw the object. |
+| Add a second pinch while holding an object | Join the same object, even from empty canvas. Spread to resize and twist to rotate. |
+| Rotate + pinch and drag | Turn the selected object freely on all three axes. Its orientation stays after release. |
+| Inspect + pinch and drag | Rotate the isolated model. Two hands zoom and roll it. |
+| Hold a fist in Move mode | Crush the hovered object. |
+| Hold a peace sign | Start or stop voice input. |
+| Pinch a control | Activate its button. |
+
+Keep the hand in view and touch thumb to index finger for a pinch. The camera skeleton and highlighted gesture rows show what tracking recognizes.
+
+Mouse: drag an object in Move mode to grab it, use Rotate to turn the selection, drag empty space to orbit, and scroll to zoom. In Move mode, scroll while holding an object to push or pull it.
+
+| Key | Action |
+| --- | --- |
+| `/` | Focus the creation prompt |
+| `M` | Start/stop voice input |
+| `I` | Inspect the selected or hovered object |
+| `Escape` | Exit Inspect, focus mode, or a dialog |
+| `F` | Toggle focus mode |
+| `Delete` / `Backspace` | Delete the selected or hovered object |
+| `X`, `Y`, `Z` in Inspect | Turn 15 degrees; Shift reverses the turn |
+| `Cmd/Ctrl + S` | Save the current world locally |
+
+## Photo detail and textured meshes
+
+Gemini reconstructs a **shape approximation** using primitives. More detail improves the silhouette, proportions and recognizable features; a single photograph cannot recover exact unseen surfaces, text or textures.
+
+The optional ASU Flux/Trellis image-to-mesh service is configured separately from chat:
+
+```env
+MESH_API_KEY=YOUR_ASU_API_KEY
+MESH_BASE_URL=https://openai.rc.asu.edu/v1
+```
+
+When connected, **Make it HD** is available in Inspect mode. If chat already uses the ASU endpoint, its key is reused for this service unless a separate mesh key is supplied. A Gemini key is never sent to the ASU mesh service. Imported textured models work without this optional service.
+
+## A short demo
+
+1. Open the orbital playground and enable hands.
+2. Select Rotate, pinch, and turn the sculpture. Release: it keeps its orientation.
+3. Return to Move. Pick up an object; add a second hand to stretch and twist it.
+4. Describe “a castle with four towers and a red flag” and watch it assemble.
+5. Inspect it, change the view, explode its parts, or ask for more detail.
+6. Hold up a real object, preview its photo, and create a 3D approximation.
+7. Switch lighting, try zero gravity, and export the world.
+
+## Development and verification
+
+```bash
+npm test
+npm run build
+npm run preview
+```
+
+Use Vite's dev or preview server for AI requests; a plain static server does not provide the credential proxy.
+
+The app uses React, Vite, Three.js/React Three Fiber, Rapier, MediaPipe and a compatible streaming AI API. Hand tracking and cursor updates use a mutable frame loop rather than updating React every frame. Scene commands are validated and bounded before rendering. The tracker model and WASM are copied into `public/mediapipe` during installation, with CDN fallbacks.
+
+Tests cover gesture recognition, partial JSON, scene actions, detailed photo part budgets, viewport coordinate mapping, saved worlds and committed hand rotations. Browser checks also exercise the studio workflow, camera lifecycle, actual Gemini calls, GLB round trips, saved mesh assets and mobile navigation.

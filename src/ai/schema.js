@@ -4,6 +4,7 @@ export const PHYSICS = ['dynamic', 'static', 'float']
 export const BEHAVIORS = ['none', 'spin', 'float', 'orbit', 'pulse', 'bounce']
 export const PRESETS = ['studio', 'sunset', 'night', 'dawn']
 export const GRAVITY = ['normal', 'low', 'zero']
+export const PHOTO_PARTS_LIMIT = 64
 
 const vec3 = { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 }
 
@@ -75,6 +76,16 @@ export const RESPONSE_SCHEMA = {
     },
   },
   required: ['narration'],
+}
+
+export function schemaForParts(limit) {
+  return {
+    ...RESPONSE_SCHEMA,
+    properties: {
+      ...RESPONSE_SCHEMA.properties,
+      spawn: { ...RESPONSE_SCHEMA.properties.spawn, items: { ...spawn, properties: { ...spawn.properties, parts: { ...spawn.properties.parts, maxItems: limit, description: `Up to ${limit} primitives faithfully reconstructing the photographed object` } } } },
+    },
+  }
 }
 
 // Turns a model response into the ordered action list the world understands.

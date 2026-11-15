@@ -2,7 +2,8 @@ import { useKinex } from '../store.js'
 import { getCached, putCached, cacheKey } from './cache.js'
 
 // ASU's image and mesh models, through the same Vite proxy as the chat model.
-const BASE = typeof __LLM_BASE__ === 'undefined' ? 'https://openai.rc.asu.edu/v1' : __LLM_BASE__
+const BASE = typeof __MESH_BASE__ === 'undefined' ? 'https://openai.rc.asu.edu/v1' : __MESH_BASE__
+export const hasHD = typeof __MESH_READY__ !== 'undefined' && __MESH_READY__
 const POLL_MS = 4000
 const MAX_MS = 15 * 60 * 1000
 
@@ -73,6 +74,7 @@ function subjectFor(obj) {
 // Turns a block object into a real textured model. Progress lives in store.hd[id].
 export async function makeHD(id) {
   const st = useKinex.getState()
+  if (!hasHD) { st.setStatus('error', 'HD generation isn’t connected in this workspace. You can still import a 3D model or add AI detail.'); return }
   const obj = st.objects.find((o) => o.id === id)
   if (!obj || running.has(id) || st.hd[id]?.status === 'ready') return
   running.add(id)

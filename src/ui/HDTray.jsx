@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useKinex } from '../store.js'
-import { makeHD } from '../hd/meshes.js'
+import { makeHD, hasHD } from '../hd/meshes.js'
 import { enterInspect } from '../lib/viewer.js'
 
 const STAGES = {
@@ -37,6 +37,7 @@ export function HDTray() {
   const setHD = useKinex((s) => s.setHD)
   const [, tick] = useState(0)
   const entries = Object.entries(hd).filter(([id, h]) => !h.dismissed && objects.some((o) => o.id === id))
+  const references = objects.filter((object) => object.source?.photo && !hd[object.id]).slice(-2)
   const active = entries.some(([, h]) => h.status !== 'ready' && h.status !== 'failed')
 
   useEffect(() => {
@@ -45,9 +46,10 @@ export function HDTray() {
     return () => clearInterval(t)
   }, [active])
 
-  if (!entries.length) return null
+  if (!entries.length && !references.length) return null
   return (
-    <aside aria-label="HD models" className="fixed bottom-[148px] right-4 z-30 flex w-[280px] flex-col gap-2 sm:right-6">
+    <aside aria-label="HD models" className="hd-tray fixed bottom-[148px] right-4 z-30 flex w-[280px] flex-col gap-2 sm:right-6">
+      {references.map((object) => <div className="reference-card" key={object.id}><img src={object.source.photo} alt={`Camera reference for ${object.name}`}/><div><span>PHOTO → 3D</span><strong>{object.name}</strong><p>{object.parts.length} parts · Shape approximation</p><div><button data-hand onClick={() => enterInspect(object.id)}>Inspect</button>{hasHD && <button data-hand onClick={() => makeHD(object.id)}>Textured HD</button>}</div></div></div>)}
       {entries.map(([id, h]) => (
         <div key={id} className="panel flex gap-3 rounded-2xl p-2 pr-3">
           <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-white">

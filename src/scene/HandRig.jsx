@@ -7,17 +7,19 @@ import { world } from '../lib/exportGltf.js'
 import { grab, release, liveScale, commitScale, held } from './interaction.js'
 import { toggleListening } from '../voice/speech.js'
 import { viewer, rotateModelAbout, focusPart } from '../lib/viewer.js'
+import { viewportPoint } from './viewport.js'
 
 const raycaster = new THREE.Raycaster()
 const ndc = new THREE.Vector2()
 const tmp = new THREE.Vector3()
 const qTurn = new THREE.Quaternion()
 const qBase = new THREE.Quaternion()
-const UP = new THREE.Vector3(0, 1, 0)
 const camRight = new THREE.Vector3()
 const camUp = new THREE.Vector3()
 const camFwd = new THREE.Vector3()
 const TUMBLE = 3.4 // radians of model turn per screen-width of hand travel
+const rotateStep = new THREE.Quaternion()
+const rotateAxis = new THREE.Vector3()
 
 const CRUSH_S = 0.5
 const TALK_S = 0.55
@@ -52,6 +54,11 @@ const newPointer = () => ({
   talkT: 0,
   locked: false,
   ui: null,
+  tool: 'move',
+  rotateQ: new THREE.Quaternion(),
+  rotateAt: new THREE.Vector3(),
+  previousX: 0,
+  previousY: 0,
 })
 
 function velocityOf(hist, now) {
@@ -115,6 +122,7 @@ export function HandRig() {
       const end = !pinch && p.wasPinch
       p.wasPinch = pinch
       const el = document.elementFromPoint(h.cursor.x * window.innerWidth, h.cursor.y * window.innerHeight)
+      const point = viewportPoint(h.cursor.x * window.innerWidth, h.cursor.y * window.innerHeight, gl.domElement.getBoundingClientRect())
       const ui = p.insp && !p.insp.ui ? null : el?.closest?.('[data-hand]') || null
       setUiHover(p, ui)
       if (start) {
@@ -122,13 +130,13 @@ export function HandRig() {
           ui.focus?.()
           ui.click()
           p.insp = { ui: true }
-        } else p.insp = { x: h.cursor.x, y: h.cursor.y, moved: 0 }
+        } else if (point && el === gl.domElement) p.insp = { x: h.cursor.x, y: h.cursor.y, moved: 0 }
       }
       if (pinch && p.insp && !p.insp.ui) active.push({ h, p })
       if (end) {
         // A quick pinch without moving is a tap: zoom to the part under it.
-        if (p.insp && !p.insp.ui && p.insp.moved < 0.02 && world.inspectRoot) {
-          aim(camera, h.cursor.x, h.cursor.y)
+        if (p.insp && !p.insp.ui && p.insp.moved < 0.02 && world.inspectRoot && point) {
+          aim(camera, point.x, point.y)
           const hit = raycaster.intersectObject(world.inspectRoot, true).find((x) => x.object.userData?.partIndex !== undefined)
           if (hit) focusPart(hit.object, hit.object.userData.partIndex)
         }
@@ -184,7 +192,7 @@ export function HandRig() {
       if (useKinex.getState().inspectId) return // the camera handles the mouse in Inspect
       const n = toNorm(e)
       Object.assign(mouse.current, n, { present: true })
-      if (hitObject(camera, n.x, n.y)) {
+      if (hitObject(camera, n.x, n.y) || (useKinex.getState().handTool === 'rotate' && useKinex.getState().lastId)) {
         mouse.current.down = true
         mouse.current.wheel = 0
         if (controls) controls.enabled = false
@@ -223,19 +231,26 @@ export function HandRig() {
       inspectFrame(now, dt)
       return
     }
+    const rect = gl.domElement.getBoundingClientRect()
     const inputs = [
-      ...tracker.hands.map((h) => ({
+      ...tracker.hands.map((h) => {
+        const screenX = h.cursor.x * window.innerWidth
+        const screenY = h.cursor.y * window.innerHeight
+        const point = viewportPoint(screenX, screenY, rect)
+        return ({
         present: h.present,
         isHand: true,
-        x: h.cursor.x,
-        y: h.cursor.y,
+        x: point?.x ?? (screenX - rect.left) / Math.max(rect.width, 1),
+        y: point?.y ?? (screenY - rect.top) / Math.max(rect.height, 1),
+        screenX, screenY,
+        inside: Boolean(point),
         pinch: h.present && h.gesture.pinch,
         fist: h.present && h.gesture.fist,
         victory: h.present && h.gesture.victory,
         palm: h.gesture.palm,
         slot: h,
-      })),
-      { present: m.present, isHand: false, x: m.x, y: m.y, pinch: m.down, fist: false, victory: false, palm: 1, slot: null },
+      }) }),
+      { present: m.present, isHand: false, inside: m.x >= 0 && m.x <= 1 && m.y >= 0 && m.y <= 1, x: m.x, y: m.y, pinch: m.down, fist: false, victory: false, palm: 1, slot: null },
     ]
 
     let hoverId = null
@@ -256,25 +271,42 @@ export function HandRig() {
 
       // UI under a hand cursor gets pinch-to-click.
       let ui = null
+      let blocked = false
       if (inp.isHand && !p.grabId) {
-        const el = document.elementFromPoint(inp.x * window.innerWidth, inp.y * window.innerHeight)
+        const el = document.elementFromPoint(inp.screenX, inp.screenY)
         ui = el?.closest?.('[data-hand]') || null
+        blocked = el !== gl.domElement
       }
       setUiHover(p, ui)
 
-      const hit = p.grabId ? null : hitObject(camera, inp.x, inp.y)
+      const hit = p.grabId || !inp.inside || ui || blocked ? null : hitObject(camera, inp.x, inp.y)
       if (hit && !hoverId && !ui) hoverId = hit.id
 
       if (pinchStart) {
         if (ui) {
           ui.focus?.()
           ui.click()
-        } else if (hit && grab(hit.id)) {
-          const b = bodies.get(hit.id).translation()
-          p.grabId = hit.id
-          p.dist = hit.distance
+        } else if (inp.inside && !blocked) {
+          // A second hand can join the held object without aiming at the same pixel.
+          const other = inp.isHand ? pointers.current[1 - i] : null
+          const state = useKinex.getState()
+          const targetId = hit?.id || other?.grabId || (state.handTool === 'rotate' ? state.lastId : null)
+          const body = targetId && bodies.get(targetId)
+          if (!body || !grab(targetId)) return
+          const b = body.translation()
+          const q = body.rotation()
+          p.grabId = targetId
+          p.dist = hit?.distance || other?.dist || camera.position.distanceTo(tmp.set(b.x, b.y, b.z))
           p.palm0 = inp.palm
-          p.offset.set(b.x - hit.point.x, b.y - hit.point.y, b.z - hit.point.z)
+          const point = hit?.point || aim(camera, inp.x, inp.y).at(p.dist, tmp)
+          p.offset.set(b.x - point.x, b.y - point.y, b.z - point.z)
+          p.tool = state.handTool
+          p.previousX = inp.x
+          p.previousY = inp.y
+          p.rotateQ.set(q.x, q.y, q.z, q.w)
+          p.rotateAt.set(b.x, b.y, b.z)
+          if (p.tool === 'rotate') body.setEnabledRotations(true, true, true, true)
+          state.set({ lastId: targetId })
           p.hist = []
           if (!inp.isHand) m.wheel = 0
         }
@@ -282,6 +314,18 @@ export function HandRig() {
       if (pinchEnd && p.grabId) endGrab(p, now)
 
       if (p.grabId) {
+        if (p.tool === 'rotate') {
+          const dx = (inp.x - p.previousX) * rect.width / Math.max(rect.height, 1)
+          const dy = inp.y - p.previousY
+          p.previousX = inp.x
+          p.previousY = inp.y
+          rotateAxis.set(0, 1, 0).applyQuaternion(camera.quaternion)
+          p.rotateQ.premultiply(rotateStep.setFromAxisAngle(rotateAxis, dx * TUMBLE))
+          rotateAxis.set(1, 0, 0).applyQuaternion(camera.quaternion)
+          p.rotateQ.premultiply(rotateStep.setFromAxisAngle(rotateAxis, dy * TUMBLE)).normalize()
+          bodies.get(p.grabId)?.setNextKinematicRotation(p.rotateQ)
+          p.target.copy(p.rotateAt)
+        } else {
         const depth = inp.isHand
           ? p.dist * Math.pow(p.palm0 / Math.max(0.02, inp.palm), 1.3)
           : p.dist + m.wheel * 0.01
@@ -295,10 +339,11 @@ export function HandRig() {
         )
         p.hist.push({ t: now, p: p.target.clone() })
         if (p.hist.length > 12) p.hist.shift()
+        }
       }
 
       // Hold a fist over something to crush it.
-      if (inp.fist && !p.grabId && hit && !p.locked) {
+      if (useKinex.getState().handTool === 'move' && inp.fist && !p.grabId && hit && !p.locked) {
         p.crushT += dt
         if (p.crushT >= CRUSH_S) {
           useKinex.getState().removeObject(hit.id)
@@ -314,7 +359,7 @@ export function HandRig() {
       talkGesture(p, inp, dt, now)
 
       if (slot) {
-        slot.mode = p.grabId ? 'grab' : inp.fist && hit ? 'crush' : inp.victory ? 'talk' : ui ? 'ui' : hit ? 'hover' : 'idle'
+        slot.mode = p.grabId ? p.tool === 'rotate' ? 'rotate' : 'grab' : inp.fist && hit ? 'crush' : inp.victory ? 'talk' : ui ? 'ui' : hit ? 'hover' : 'idle'
         slot.hold = inp.fist ? p.crushT / CRUSH_S : inp.victory ? p.talkT / TALK_S : 0
       }
     })
@@ -339,7 +384,8 @@ export function HandRig() {
       const obj = useKinex.getState().objects.find((o) => o.id === both)
       const base = obj?.scale || 1
       liveScale.set(both, THREE.MathUtils.clamp(d / s.d0, 0.15 / base, 6 / base))
-      qTurn.setFromAxisAngle(UP, -(ang - s.a0) * 1.5)
+      camFwd.set(0, 0, -1).applyQuaternion(camera.quaternion)
+      qTurn.setFromAxisAngle(camFwd, -(ang - s.a0))
       body.setNextKinematicRotation(qBase.copy(qTurn).multiply(s.q0))
       tmp.copy(a.target).add(b.target).multiplyScalar(0.5)
       body.setNextKinematicTranslation(tmp)
@@ -366,6 +412,16 @@ export function HandRig() {
       stretch.current = null
     }
     release(id, velocityOf(p.hist, now))
+    const remaining = pointers.current.find((pointer) => pointer.grabId === id)
+    const body = bodies.get(id)
+    if (remaining?.tool === 'rotate' && body) {
+      const q = body.rotation()
+      const t = body.translation()
+      remaining.rotateQ.set(q.x, q.y, q.z, q.w)
+      remaining.rotateAt.set(t.x, t.y, t.z)
+      remaining.target.copy(remaining.rotateAt)
+      body.setNextKinematicRotation(remaining.rotateQ)
+    }
     p.hist = []
   }
 

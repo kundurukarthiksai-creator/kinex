@@ -2,7 +2,7 @@ import { useKinex } from '../store.js'
 import { exitInspect, snapView, rotateModel, resetModelRotation, partsBounds } from '../lib/viewer.js'
 import { addDetail } from '../ai/commands.js'
 import { MAX_DETAILED_PARTS } from '../ai/apply.js'
-import { makeHD } from '../hd/meshes.js'
+import { makeHD, hasHD } from '../hd/meshes.js'
 
 const AXES = [
   ['x', '#E5484D'],
@@ -59,7 +59,7 @@ export function InspectPanel() {
   const full = obj.parts.length >= MAX_DETAILED_PARTS
 
   return (
-    <div className="panel flex w-[min(340px,calc(100vw-2rem))] flex-col gap-3 rounded-3xl p-4">
+    <div className="inspect-panel panel flex flex-col gap-3 p-4">
       <div>
         <h2 className="text-2xl font-semibold leading-tight tracking-[-0.02em] text-ink first-letter:uppercase">{obj.name}</h2>
         <p className="text-sm text-muted">
@@ -150,7 +150,7 @@ export function InspectPanel() {
           <Btn active={showingHD} onClick={() => setHD(obj.id, { show: !showingHD })}>
             {showingHD ? 'Showing HD model' : 'Show HD model'}
           </Btn>
-        ) : (
+        ) : hasHD ? (
           <button
             data-hand
             onClick={() => makeHD(obj.id)}
@@ -160,7 +160,7 @@ export function InspectPanel() {
           >
             {hdBusy ? 'Making the HD model…' : hd?.status === 'failed' ? 'Try HD again' : 'Make it HD'}
           </button>
-        )}
+        ) : null}
       </div>
 
       <div className="flex gap-2 pt-1">

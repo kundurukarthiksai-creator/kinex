@@ -16,7 +16,7 @@ import { viewer } from '../lib/viewer.js'
 // The world is a photo-studio cyclorama: floor and backdrop share one color and fog
 // erases the horizon, so every object reads like a product shot.
 const PRESETS = {
-  studio: { bg: '#D8DCE6', shadow: '#3A3F5C', shadowO: 0.22, sky: '#FFFFFF', ground: '#AEB4C4', hemi: 0.55, key: '#FFFFFF', keyI: 1.6, env: 0.9 },
+  studio: { bg: '#E4E9EB', shadow: '#425B65', shadowO: 0.19, sky: '#FFFFFF', ground: '#B2C1C3', hemi: 0.65, key: '#FFFFFF', keyI: 1.8, env: 1.1 },
   sunset: { bg: '#EBC2AA', shadow: '#5A2E3E', shadowO: 0.28, sky: '#FFE2C6', ground: '#8C6A86', hemi: 0.5, key: '#FFB37D', keyI: 1.9, env: 0.7 },
   dawn: { bg: '#D6D0EA', shadow: '#3F3A66', shadowO: 0.22, sky: '#FBE9F3', ground: '#9EA3C8', hemi: 0.55, key: '#FFD8E6', keyI: 1.5, env: 0.8 },
   night: { bg: '#161B33', shadow: '#000000', shadowO: 0.45, sky: '#4A5AA8', ground: '#0B0E1C', hemi: 0.3, key: '#9DB0FF', keyI: 0.6, env: 0.18 },
@@ -32,12 +32,14 @@ function EnvironmentRig({ floorMat, hemi, keyLight }) {
 
   useEffect(() => {
     scene.background = new THREE.Color(PRESETS.studio.bg)
+    scene.fog = new THREE.Fog(PRESETS.studio.bg, 18, 50)
   }, [scene])
 
   useFrame((_, dt) => {
     const p = target.current
     const k = 1 - Math.exp(-dt * 3)
     scene.background.lerp(c.current.bg.set(p.bg), k)
+    scene.fog?.color.copy(scene.background)
     if (floorMat.current) {
       floorMat.current.color.lerp(c.current.floor.set(p.shadow), k)
       floorMat.current.opacity += (p.shadowO - floorMat.current.opacity) * k
@@ -54,6 +56,17 @@ function EnvironmentRig({ floorMat, hemi, keyLight }) {
     scene.environmentIntensity = (scene.environmentIntensity ?? 1) + (p.env - (scene.environmentIntensity ?? 1)) * k
   })
   return null
+}
+
+function FloorGrid() {
+  const visible = useKinex((s) => s.showGrid)
+  const grid = useRef()
+  useEffect(() => {
+    grid.current.material.transparent = true
+    grid.current.material.opacity = 0.22
+    grid.current.material.depthWrite = false
+  }, [])
+  return <gridHelper ref={grid} visible={visible} args={[50, 50, '#9FB3B8', '#C1CDCF']} position={[0, 0.003, 0]} />
 }
 
 // Turning gravity off should look like it: give everything a gentle shove upward.
@@ -99,13 +112,14 @@ function Room() {
 
 function World() {
   const objects = useKinex((s) => s.objects)
+  const projectName = useKinex((s) => s.projectName)
   const inspecting = useKinex((s) => Boolean(s.inspectId))
   const root = useRef()
   useEffect(() => {
     world.root = root.current
   }, [])
   return (
-    <group ref={root} name="world" visible={!inspecting}>
+    <group ref={root} name={projectName || 'world'} visible={!inspecting}>
       {objects.map((o) => (
         <KinexObject key={o.id} obj={o} />
       ))}
@@ -115,7 +129,11 @@ function World() {
 
 // Hands the camera and its controls to the viewer module (views, Inspect, gizmo).
 function RegisterViewer() {
-  const { camera, controls } = useThree()
+  const { camera, controls, size } = useThree()
+  useEffect(() => {
+    camera.fov = size.width / size.height < 0.8 ? 56 : 40
+    camera.updateProjectionMatrix()
+  }, [camera, size.width, size.height])
   useEffect(() => {
     if (!controls) return
     viewer.camera = camera
@@ -128,6 +146,7 @@ function RegisterViewer() {
 export default function Stage() {
   const gravity = useKinex((s) => s.environment.gravity)
   const inspecting = useKinex((s) => Boolean(s.inspectId))
+  const highQuality = useKinex((s) => s.renderQuality === 'high')
   const floorMat = useRef()
   const hemi = useRef()
   const keyLight = useRef()
@@ -135,10 +154,12 @@ export default function Stage() {
   return (
     <Canvas
       shadows
-      dpr={[1, 1.75]}
+      dpr={highQuality ? [1.5, 2] : [1, 1.5]}
       camera={{ position: [0, 4.2, 13], fov: 40, near: 0.1, far: 120 }}
       gl={{ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: false }}
-      className="!fixed inset-0"
+      className="!absolute inset-0"
+      fallback={<div className="workspace-loading"><p>The 3D canvas couldn’t start. Try Chrome or Edge with hardware acceleration enabled.</p></div>}
+      onCreated={({ gl }) => { gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1.05; gl.shadowMap.type = THREE.PCFSoftShadowMap }}
     >
       <EnvironmentRig floorMat={floorMat} hemi={hemi} keyLight={keyLight} />
       <hemisphereLight ref={hemi} args={['#FFFFFF', '#AEB4C4', 0.55]} />
@@ -147,7 +168,7 @@ export default function Stage() {
         position={[5, 9, 6]}
         intensity={1.6}
         castShadow
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={highQuality ? [4096, 4096] : [2048, 2048]}
         shadow-camera-left={-12}
         shadow-camera-right={12}
         shadow-camera-top={12}
@@ -156,8 +177,9 @@ export default function Stage() {
         shadow-bias={-0.0004}
         shadow-radius={6}
       />
+      <directionalLight position={[-6, 4, -5]} color="#BDDDE5" intensity={0.8}/>
       {/* Softboxes for reflections on metal and glass; generated locally, no network. */}
-      <Environment resolution={256} frames={1}>
+      <Environment resolution={highQuality ? 512 : 256} frames={1}>
         <Lightformer form="rect" intensity={3} position={[0, 6, 0]} rotation-x={Math.PI / 2} scale={[12, 6, 1]} />
         <Lightformer form="rect" intensity={2} position={[-7, 2, 2]} rotation-y={Math.PI / 2} scale={[8, 3, 1]} />
         <Lightformer form="rect" intensity={1.5} position={[7, 2, 2]} rotation-y={-Math.PI / 2} scale={[8, 3, 1]} />
@@ -169,6 +191,7 @@ export default function Stage() {
         <planeGeometry args={[200, 200]} />
         <shadowMaterial ref={floorMat} transparent opacity={0.22} color="#3A3F5C" />
       </mesh>
+      <FloorGrid />
 
       <Suspense fallback={null}>
         <Physics gravity={GRAVITY[gravity]} paused={inspecting}>
@@ -192,7 +215,7 @@ export default function Stage() {
       />
       <RegisterViewer />
       <EffectComposer multisampling={4}>
-        <Bloom luminanceThreshold={1} luminanceSmoothing={0.2} intensity={0.9} mipmapBlur />
+        <Bloom luminanceThreshold={1.1} luminanceSmoothing={0.25} intensity={0.45} mipmapBlur />
       </EffectComposer>
     </Canvas>
   )

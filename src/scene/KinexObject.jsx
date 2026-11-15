@@ -38,11 +38,12 @@ function PartCollider({ part, scale }) {
 const UPRIGHT = [false, true, false]
 const _q = new THREE.Quaternion()
 const _e = new THREE.Euler()
+const _baseQ = new THREE.Quaternion()
 
 function KinexObject({ obj }) {
   const body = useRef()
   const group = useRef()
-  const hovered = useKinex((s) => s.hoverId === obj.id)
+  const hovered = useKinex((s) => s.hoverId === obj.id || (s.handTool === 'rotate' && s.lastId === obj.id))
   const hdUrl = useKinex((s) => {
     const h = s.hd[obj.id]
     return h?.status === 'ready' && h.show !== false ? h.url : null
@@ -55,7 +56,7 @@ function KinexObject({ obj }) {
     const b = body.current
     bodies.set(obj.id, b)
     groups.set(obj.id, group.current)
-    homes.set(obj.id, { x: obj.position[0], y: obj.position[1] + 0.02, z: obj.position[2] })
+    homes.set(obj.id, { x: obj.position[0], y: obj.position[1] + 0.02, z: obj.position[2], at: performance.now() })
     return () => {
       bodies.delete(obj.id)
       groups.delete(obj.id)
@@ -70,7 +71,7 @@ function KinexObject({ obj }) {
     const b = body.current
     if (!b) return
     const t = b.translation()
-    homes.set(obj.id, { x: t.x, y: t.y, z: t.z })
+    homes.set(obj.id, { x: t.x, y: t.y, z: t.z, at: performance.now() })
   }, [obj.behavior.kind, obj.behavior.targetId, obj.id])
 
   useFrame((state) => {
@@ -93,7 +94,7 @@ function KinexObject({ obj }) {
     if (held.has(o.id) || kind === 'none' || now - o.born < 300) return
     const home = homes.get(o.id)
     if (!home) return
-    const t = state.clock.elapsedTime * o.behavior.speed
+    const t = (now - (home.at ?? 0)) / 1000 * o.behavior.speed
     const p = { x: home.x, y: home.y, z: home.z }
     let yaw = null
     if (kind === 'spin') yaw = t * 1.6
@@ -114,7 +115,11 @@ function KinexObject({ obj }) {
       yaw = -a
     }
     b.setNextKinematicTranslation(p)
-    if (yaw !== null) b.setNextKinematicRotation(_q.setFromEuler(_e.set(0, yaw + (o.rotationY || 0), 0)))
+    if (yaw !== null) {
+      if (o.quaternion) _baseQ.fromArray(o.quaternion)
+      else _baseQ.setFromEuler(_e.set(0, o.rotationY || 0, 0))
+      b.setNextKinematicRotation(_q.setFromEuler(_e.set(0, yaw, 0)).multiply(_baseQ))
+    }
   })
 
   return (
@@ -123,7 +128,8 @@ function KinexObject({ obj }) {
       colliders={false}
       type="kinematicPosition"
       position={[obj.position[0], obj.position[1] + 0.02, obj.position[2]]}
-      rotation={[0, obj.rotationY || 0, 0]}
+      rotation={obj.quaternion ? undefined : [0, obj.rotationY || 0, 0]}
+      quaternion={obj.quaternion}
       linearDamping={0.15}
       angularDamping={0.5}
       ccd

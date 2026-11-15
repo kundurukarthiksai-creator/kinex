@@ -56,7 +56,9 @@ export function release(id, velocity) {
   const obj = getObj(id)
   if (!body || !obj) return
   const t = body.translation()
-  homes.set(id, { x: t.x, y: t.y, z: t.z })
+  homes.set(id, { x: t.x, y: t.y, z: t.z, at: performance.now() })
+  const q = body.rotation()
+  useKinex.getState().updateObject(id, { quaternion: [q.x, q.y, q.z, q.w] })
   const type = desiredType(obj)
   body.setBodyType(type, true)
   if (type === DYNAMIC && velocity) {

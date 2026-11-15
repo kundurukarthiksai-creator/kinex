@@ -6,13 +6,13 @@ import { ASSEMBLY_STAGGER, ASSEMBLY_PART_MS } from './interaction.js'
 
 // Every geometry fits a 1x1x1 box centered at the origin, so part.size is just mesh.scale.
 const GEOMETRIES = {
-  box: () => new RoundedBoxGeometry(1, 1, 1, 3, 0.05),
-  sphere: () => new THREE.SphereGeometry(0.5, 40, 24),
-  cylinder: () => new THREE.CylinderGeometry(0.5, 0.5, 1, 40),
-  cone: () => new THREE.ConeGeometry(0.5, 1, 40),
+  box: () => new RoundedBoxGeometry(1, 1, 1, 4, 0.045),
+  sphere: () => new THREE.SphereGeometry(0.5, 64, 40),
+  cylinder: () => new THREE.CylinderGeometry(0.5, 0.5, 1, 64),
+  cone: () => new THREE.ConeGeometry(0.5, 1, 64),
   pyramid: () => new THREE.ConeGeometry(0.5 * Math.SQRT2, 1, 4).rotateY(Math.PI / 4),
   dome: () => new THREE.SphereGeometry(0.5, 40, 16, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 2, 1).translate(0, -0.5, 0),
-  torus: () => new THREE.TorusGeometry(0.35, 0.15, 20, 48).scale(1, 1, 1 / 0.3),
+  torus: () => new THREE.TorusGeometry(0.45, 0.05, 24, 96).scale(1, 1, 1 / 0.1),
   capsule: () => new THREE.CapsuleGeometry(0.5, 1, 8, 24).scale(1, 0.5, 1),
   icosahedron: () => new THREE.IcosahedronGeometry(0.5, 0),
 }
@@ -25,7 +25,7 @@ export function makeMaterial(color, kind) {
     case 'matte':
       return new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.85, metalness: 0 })
     case 'metal':
-      return new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.28, metalness: 0.9 })
+      return new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.24, metalness: 0.75, envMapIntensity: 1.25 })
     case 'glass':
       return new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.05, metalness: 0, transmission: 0.92, thickness: 0.4, ior: 1.4 })
     case 'glow':
@@ -33,7 +33,7 @@ export function makeMaterial(color, kind) {
     case 'wood':
       return new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.72, metalness: 0, sheen: 0.3 })
     default: // plastic
-      return new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.32, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.25 })
+      return new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.3, metalness: 0, clearcoat: 0.85, clearcoatRoughness: 0.18 })
   }
 }
 

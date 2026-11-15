@@ -1,4 +1,4 @@
-import { RESPONSE_SCHEMA } from './schema.js'
+import { RESPONSE_SCHEMA, PHOTO_PARTS_LIMIT, schemaForParts } from './schema.js'
 import { SYSTEM_PROMPT, SUMMON_PROMPT, REFINE_PROMPT, userPrompt, refinePrompt } from './prompt.js'
 import { parsePartial } from './partialJson.js'
 
@@ -8,8 +8,9 @@ const DIRECT_KEY = typeof __LLM_READY__ === 'undefined' ? globalThis.process?.en
 const READY = typeof __LLM_READY__ === 'undefined' ? Boolean(DIRECT_KEY) : __LLM_READY__
 const BASE = typeof __LLM_BASE__ === 'undefined' ? 'https://openai.rc.asu.edu/v1' : __LLM_BASE__
 const ENV_MODEL = typeof __LLM_MODEL__ === 'undefined' ? '' : __LLM_MODEL__
+const GEMINI = typeof __LLM_PROVIDER__ !== 'undefined' && __LLM_PROVIDER__ === 'gemini'
 // deepseek-v4-1-flash with reasoning off starts writing in ~1s; qwen38-27b is the backup.
-const MODELS = [...new Set([ENV_MODEL, 'deepseek-v4-1-flash', 'qwen38-27b'].filter(Boolean))]
+const MODELS = GEMINI ? [ENV_MODEL || 'gemini-3.5-flash-lite'] : [...new Set([ENV_MODEL, 'deepseek-v4-1-flash', 'qwen38-27b'].filter(Boolean))]
 const IDLE_MS = 20000 // give up if the stream goes quiet this long
 const TOTAL_MS = 120000
 
@@ -17,7 +18,10 @@ export const hasLLM = READY
 
 // Servers differ in what they accept, so start strict and fall back on a 400.
 // Each model remembers the first rung that worked.
-const LADDER = [
+const LADDER = GEMINI ? [
+  { format: 'json_object', noThink: false },
+  { format: null, noThink: false },
+] : [
   { format: 'json_schema', noThink: true },
   { format: 'json_schema', noThink: false },
   { format: 'json_object', noThink: false },
@@ -28,7 +32,7 @@ let working = null
 
 export class LLMError extends Error {}
 
-function body(model, messages, rung, maxTokens) {
+function body(model, messages, rung, maxTokens, schema) {
   return {
     model,
     messages,
@@ -37,7 +41,7 @@ function body(model, messages, rung, maxTokens) {
     max_tokens: maxTokens,
     ...(rung.noThink ? { chat_template_kwargs: { enable_thinking: false, thinking: false } } : {}),
     ...(rung.format === 'json_schema'
-      ? { response_format: { type: 'json_schema', json_schema: { name: 'kinex_plan', schema: RESPONSE_SCHEMA } } }
+      ? { response_format: { type: 'json_schema', json_schema: { name: 'kinex_plan', schema } } }
       : rung.format === 'json_object'
         ? { response_format: { type: 'json_object' } }
         : {}),
@@ -59,7 +63,7 @@ export function extractJson(text) {
 }
 
 // Streams one completion. onText receives the full text so far after every chunk.
-async function streamOnce(model, messages, rung, onText, maxTokens) {
+async function streamOnce(model, messages, rung, onText, maxTokens, schema) {
   const ctrl = new AbortController()
   let idle = setTimeout(() => ctrl.abort(), IDLE_MS)
   const total = setTimeout(() => ctrl.abort(), TOTAL_MS)
@@ -69,7 +73,7 @@ async function streamOnce(model, messages, rung, onText, maxTokens) {
       method: 'POST',
       signal: ctrl.signal,
       headers: { 'Content-Type': 'application/json', ...(DIRECT_KEY ? { Authorization: `Bearer ${DIRECT_KEY}` } : {}) },
-      body: JSON.stringify(body(model, messages, rung, maxTokens)),
+      body: JSON.stringify(body(model, messages, rung, maxTokens, schema)),
     })
     if (!res.ok) {
       const err = new LLMError(`${res.status} ${(await res.text()).slice(0, 200)}`)
@@ -120,7 +124,7 @@ async function streamOnce(model, messages, rung, onText, maxTokens) {
   }
 }
 
-async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTokens = 4096 } = {}) {
+async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTokens = 4096, schema = RESPONSE_SCHEMA } = {}) {
   if (!READY) throw new LLMError('No OPENAI_API_KEY in .env.')
   const messages = [
     { role: 'system', content: system },
@@ -139,7 +143,7 @@ async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTok
         if (onPartial?.(p)) built = true
       }
       try {
-        const text = await streamOnce(model, messages, LADDER[r], onText, maxTokens)
+        const text = await streamOnce(model, messages, LADDER[r], onText, maxTokens, schema)
         const plan = extractJson(text)
         rungFor.set(model, r)
         working = model
@@ -161,13 +165,14 @@ export function planFromText(text, scene, onPartial) {
   return generate(userPrompt(text, scene), onPartial)
 }
 
-export function planFromImage(base64Jpeg, scene, onPartial) {
+export function planFromImage(base64Jpeg, scene, onPartial, { maxParts = PHOTO_PARTS_LIMIT } = {}) {
   return generate(
     [
-      { type: 'text', text: `${SUMMON_PROMPT}\n\nCURRENT SCENE:\n${JSON.stringify(scene)}` },
+      { type: 'text', text: `Reconstruct the object in this reference photograph using up to ${maxParts} parts. CURRENT SCENE:\n${JSON.stringify(scene)}` },
       { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Jpeg}` } },
     ],
     onPartial,
+    { system: SUMMON_PROMPT.replace('PART_LIMIT', String(maxParts)), maxTokens: maxParts > 24 ? 12288 : 6144, schema: schemaForParts(maxParts) },
   )
 }
 

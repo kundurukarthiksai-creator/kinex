@@ -43,7 +43,8 @@ function applyLimits(limits) {
 
 function distanceFor(radius) {
   const fov = (viewer.camera?.fov ?? 40) * DEG
-  return (radius / Math.sin(fov / 2)) * 1.15
+  const horizontal = 2 * Math.atan(Math.tan(fov / 2) * (viewer.camera?.aspect || 1))
+  return (radius / Math.sin(Math.min(fov, horizontal) / 2)) * 1.15
 }
 
 export function enterInspect(id) {

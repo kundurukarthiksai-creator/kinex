@@ -6,6 +6,7 @@ import { enterInspect, exitInspect, snapView, rotateModel, resetModelRotation } 
 import { captureFrame } from '../lib/captureFrame.js'
 import { exportWorld } from '../lib/exportGltf.js'
 import { makeHD } from '../hd/meshes.js'
+import { PHOTO_PARTS_LIMIT } from './schema.js'
 
 let busy = 0
 
@@ -17,12 +18,13 @@ function tagNew(source) {
 
 function finish(plan, note, live, source) {
   const st = useKinex.getState()
-  applyActions(plan, live)
+  applyActions(plan, live, { maxParts: source?.photo ? source.maxParts || PHOTO_PARTS_LIMIT : 24 })
   if (source) {
     tagNew(source)
     setTimeout(() => tagNew(source), 4000) // multi-object spawns land staggered
   }
-  st.set({ narration: note ? `${note} ${plan.narration || ''}`.trim() : plan.narration || '' })
+  const narration = typeof plan.narration === 'string' ? plan.narration.slice(0, 600) : ''
+  st.set({ narration: note ? `${note} ${narration}`.trim() : narration })
   st.setStatus('done', '')
 }
 
@@ -30,6 +32,7 @@ export async function runCommand(raw) {
   const text = String(raw || '').trim()
   if (!text) return
   const st = useKinex.getState()
+  if (st.status.kind === 'thinking') return
   st.setSubtitle(text, false)
 
   // Local intents that never need the model.
@@ -61,10 +64,11 @@ export async function runCommand(raw) {
   }
 }
 
-export async function summon() {
+export async function summon({ frame: suppliedFrame, maxParts = PHOTO_PARTS_LIMIT } = {}) {
   const st = useKinex.getState()
+  if (st.status.kind === 'thinking') return
   if (useKinex.getState().scanning) return
-  const frame = captureFrame()
+  const frame = suppliedFrame || captureFrame()
   if (!frame) {
     st.setStatus('error', 'Turn on the camera to summon a real object.')
     return
@@ -75,11 +79,17 @@ export async function summon() {
   }
   st.setSubtitle('Summon this', false)
   st.set({ scanning: true, narration: '' })
-  st.setStatus('thinking', 'Scanning')
+  st.setStatus('thinking', 'Studying your object')
   try {
     const live = new Map()
-    const plan = await planFromImage(frame, describeScene(), (p) => streamSpawns(p, live))
-    finish(plan, '', live, { text: 'summon', photo: `data:image/jpeg;base64,${frame}` })
+    let rebuilding = false
+    const plan = await planFromImage(frame, describeScene(), (p) => {
+      const built = streamSpawns(p, live, { maxParts })
+      if (built && !rebuilding) { rebuilding = true; st.setStatus('thinking', 'Rebuilding your object') }
+      return built
+    }, { maxParts })
+    if (!plan.spawn?.some((object) => object.parts?.length)) { st.setStatus('error', 'Hold one object near the center in good light, then try again.'); return }
+    finish(plan, '', live, { text: 'summon', photo: `data:image/jpeg;base64,${frame}`, maxParts })
   } catch (err) {
     console.warn('[kinex] summon failed:', err)
     st.setStatus('error', "Couldn't recognize that. Hold the object closer, in good light, and try again.")
@@ -164,6 +174,7 @@ export function inspectIntent(raw) {
 // Streams extra detail parts onto the inspected (or last touched) object.
 export async function addDetail(id) {
   const st = useKinex.getState()
+  if (st.status.kind === 'thinking') return
   const obj = st.objects.find((o) => o.id === (id || st.inspectId || st.lastId))
   if (!obj || st.inspect.refining) return
   if (!hasLLM) {

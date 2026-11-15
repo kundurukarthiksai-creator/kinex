@@ -1,73 +1,33 @@
-import { useRef } from 'react'
+import { useState, useEffect, useRef, useId } from 'react'
 import { useKinex } from '../store.js'
-import { importModelFile, IMPORT_EXTENSIONS } from '../hd/importModel.js'
+import { Icon } from './Icon.jsx'
 
-const GRAVITY = [
-  ['normal', 'Earth'],
-  ['low', 'Moon'],
-  ['zero', 'Off'],
-]
-const LIGHT = [
-  ['studio', 'Studio'],
-  ['sunset', 'Sunset'],
-  ['night', 'Night'],
-]
-
-function Segmented({ label, options, value, onPick }) {
-  return (
-    <div role="radiogroup" aria-label={label} className="panel flex items-center gap-1 rounded-full p-1 text-sm">
-      <span className="px-2 font-medium text-muted">{label}</span>
-      {options.map(([v, name]) => (
-        <button
-          key={v}
-          role="radio"
-          aria-checked={value === v}
-          data-hand
-          onClick={() => onPick(v)}
-          className={`rounded-full px-3 py-1.5 font-medium transition-colors ${
-            value === v ? 'bg-ink text-white' : 'text-ink hover:bg-white'
-          }`}
-        >
-          {name}
-        </button>
-      ))}
-    </div>
-  )
+function Dropdown({ label, icon, value, options, onChange, disabled }) {
+  const [open, setOpen] = useState(false)
+  const root = useRef()
+  const trigger = useRef()
+  const id = useId()
+  useEffect(() => {
+    if (!open) return
+    const outside = (event) => { if (!root.current.contains(event.target)) setOpen(false) }
+    document.addEventListener('click', outside)
+    return () => document.removeEventListener('click', outside)
+  }, [open])
+  return <div className="control-dropdown" ref={root} onKeyDown={(event) => { if (event.key === 'Escape' && open) { event.stopPropagation(); setOpen(false); trigger.current.focus() } }}>
+    <button className="toolbar-select toolbar-select-button" data-hand ref={trigger} disabled={disabled} aria-label={label} aria-haspopup="menu" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}><Icon name={icon} size={15}/><span>{options.find(([key]) => key === value)?.[1]}</span><Icon name="chevron" size={11}/></button>
+    {open && <div className="control-menu" role="menu" id={id} aria-label={label}>{options.map(([key, name]) => <button data-hand role="menuitemradio" aria-checked={key === value} key={key} onClick={() => { onChange(key); setOpen(false); trigger.current.focus() }}><span>{name}</span>{key === value && <Icon name="check" size={13}/>}</button>)}</div>}
+  </div>
 }
 
 export function SceneControls() {
-  const env = useKinex((s) => s.environment)
-  const set = useKinex((s) => s.set)
-  const count = useKinex((s) => s.objects.length)
-  const clear = useKinex((s) => s.clear)
-  const file = useRef()
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Segmented label="Gravity" options={GRAVITY} value={env.gravity} onPick={(gravity) => set({ environment: { ...env, gravity } })} />
-      <Segmented label="Light" options={LIGHT} value={env.preset} onPick={(preset) => set({ environment: { ...env, preset } })} />
-      <button
-        data-hand
-        onClick={() => file.current.click()}
-        className="panel rounded-full px-4 py-2 text-sm font-medium text-ink hover:bg-white"
-        title="Open a .glb, .gltf, .obj or .stl file (or drop one on the page)"
-      >
-        Open 3D file
-      </button>
-      <input
-        ref={file}
-        type="file"
-        accept={IMPORT_EXTENSIONS.map((e) => `.${e}`).join(',')}
-        className="hidden"
-        onChange={(e) => {
-          ;[...e.target.files].forEach((f) => importModelFile(f))
-          e.target.value = ''
-        }}
-      />
-      {count > 0 && (
-        <button data-hand onClick={clear} className="panel rounded-full px-4 py-2 text-sm font-medium text-ink hover:bg-white">
-          Clear all
-        </button>
-      )}
-    </div>
-  )
+  const environment = useKinex((s) => s.environment)
+  const grid = useKinex((s) => s.showGrid)
+  const thinking = useKinex((s) => s.status.kind === 'thinking')
+  const change = (key, value) => useKinex.getState().set({ environment: { ...useKinex.getState().environment, [key]: value } })
+  return <div className="scene-controls" aria-label="World settings">
+    <Dropdown label="Lighting" icon="sun" value={environment.preset} options={[["studio","Studio light"],["sunset","Golden hour"],["dawn","Soft dawn"],["night","Midnight"]]} onChange={(value) => change('preset',value)} disabled={thinking}/>
+    <Dropdown label="Gravity" icon="gravity" value={environment.gravity} options={[["normal","Earth gravity"],["low","Moon gravity"],["zero","Zero gravity"]]} onChange={(value) => change('gravity',value)} disabled={thinking}/>
+    <span className="toolbar-divider"/>
+    <button data-hand className={`toolbar-icon ${grid ? 'active' : ''}`} aria-label="Toggle floor grid" title="Toggle floor grid" aria-pressed={grid} onClick={() => useKinex.getState().set({ showGrid: !grid })}><Icon name="grid" size={16}/></button>
+  </div>
 }

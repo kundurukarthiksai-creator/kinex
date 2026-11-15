@@ -13,6 +13,7 @@ const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 const color = (c, d = '#8890A6') => (typeof c === 'string' && HEX.test(c.trim()) ? c.trim() : d)
 
 export function sanitizePart(p = {}) {
+  p = p && typeof p === 'object' ? p : {}
   const size = vec(p.size, [0.5, 0.5, 0.5]).map((n) => clamp(Math.abs(n), 0.03, 8))
   return {
     shape: pick(p.shape, SHAPES, 'box'),
@@ -80,8 +81,9 @@ export function resolveTarget(ref, objects, focusFallback = true) {
   return objects.find((o) => o.id === focus) || objects.at(-1) || null
 }
 
-export function buildObject(a, objects, { reseat = true } = {}) {
-  const parts = (Array.isArray(a.parts) ? a.parts : []).slice(0, MAX_PARTS).map(sanitizePart)
+export function buildObject(a, objects, { reseat = true, maxParts = MAX_PARTS } = {}) {
+  const limit = clamp(Math.trunc(num(maxParts, MAX_PARTS)), 1, MAX_DETAILED_PARTS)
+  const parts = (Array.isArray(a.parts) ? a.parts : []).slice(0, limit).map(sanitizePart)
   if (!parts.length) parts.push(sanitizePart({ shape: 'box', size: [0.8, 0.8, 0.8], color: '#8890A6' }))
   // Re-seat the object so its lowest part touches y=0 of its own base.
   const ext = objectExtent(parts)
@@ -104,11 +106,11 @@ const partReady = (p) =>
 // Called on every streamed chunk: objects appear as soon as their first part is
 // complete and grow as the model writes more. `live` maps spawn index -> {id, n}.
 // Returns true once anything is in the scene.
-export function streamSpawns(plan, live) {
+export function streamSpawns(plan, live, { maxParts = MAX_PARTS } = {}) {
   const spawns = Array.isArray(plan?.spawn) ? plan.spawn.slice(0, 12) : []
   spawns.forEach((s, i) => {
     if (!s || !Array.isArray(s.parts)) return
-    const ready = s.parts.filter(partReady).slice(0, MAX_PARTS)
+    const ready = s.parts.filter(partReady).slice(0, Math.min(maxParts, MAX_DETAILED_PARTS))
     if (!ready.length) return
     const st = useKinex.getState()
     const now = performance.now()
@@ -116,7 +118,7 @@ export function streamSpawns(plan, live) {
     if (!entry) {
       const at = s.at ?? s.position
       if (!Array.isArray(at)) return
-      const obj = buildObject({ ...s, position: at, parts: ready, behavior: undefined }, st.objects, { reseat: false })
+      const obj = buildObject({ ...s, position: at, parts: ready, behavior: undefined }, st.objects, { reseat: false, maxParts })
       obj.building = true
       obj.parts = obj.parts.map((p, k) => ({ ...p, born: now + k * ASSEMBLY_STAGGER }))
       live.set(i, { id: obj.id, n: ready.length })
@@ -134,7 +136,7 @@ export function streamSpawns(plan, live) {
 
 // Applies validated actions to the world. Spawns already streamed in (`live`) are
 // finalized in place instead of being built again.
-export function applyActions(plan, live = new Map()) {
+export function applyActions(plan, live = new Map(), { maxParts = MAX_PARTS } = {}) {
   const st = useKinex.getState()
   const actions = toActions(plan).slice(0, 12)
   const spawned = []
@@ -148,10 +150,10 @@ export function applyActions(plan, live = new Map()) {
         const entry = live.get(spawnIndex)
         const existing = entry && useKinex.getState().objects.find((o) => o.id === entry.id)
         if (existing) {
-          finalizeLive(existing, a, objects)
+          finalizeLive(existing, a, objects, maxParts)
           break
         }
-        const obj = buildObject(a, objects)
+        const obj = buildObject(a, objects, { maxParts })
         if (obj.behavior.targetId) {
           const t = resolveTarget(obj.behavior.targetId, objects, false)
           obj.behavior.targetId = t ? t.id : null
@@ -194,13 +196,15 @@ export function applyActions(plan, live = new Map()) {
         }
         if (Number.isFinite(Number(a.rotateY))) {
           const turn = Number(a.rotateY) * DEG
-          patch.rotationY = (o.rotationY || 0) + turn
-          if (body) {
-            const q = body.rotation()
+          patch.rotationY = 0
+          {
+            const q = body?.rotation() || (o.quaternion ? { x: o.quaternion[0], y: o.quaternion[1], z: o.quaternion[2], w: o.quaternion[3] } : { x: 0, y: Math.sin((o.rotationY || 0) / 2), z: 0, w: Math.cos((o.rotationY || 0) / 2) })
             const c = Math.cos(turn / 2)
             const s = Math.sin(turn / 2)
             // q' = rotY(turn) * q
-            body.setRotation({ w: c * q.w - s * q.y, x: c * q.x + s * q.z, y: c * q.y + s * q.w, z: c * q.z - s * q.x }, true)
+            const next = { w: c * q.w - s * q.y, x: c * q.x + s * q.z, y: c * q.y + s * q.w, z: c * q.z - s * q.x }
+            body?.setRotation(next, true)
+            patch.quaternion = [next.x, next.y, next.z, next.w]
           }
         }
         if (patch.scale && body) {
@@ -236,10 +240,10 @@ export function applyActions(plan, live = new Map()) {
   return spawned.map((o) => o.id)
 }
 
-function finalizeLive(o, a, objects) {
+function finalizeLive(o, a, objects, maxParts) {
   // A stream cut short can end mid-part; keep only finished parts.
   const ready = Array.isArray(a.parts) ? a.parts.filter(partReady) : []
-  const fin = buildObject({ ...a, parts: ready.length ? ready : a.parts, position: o.position }, [], { reseat: true })
+  const fin = buildObject({ ...a, parts: ready.length ? ready : a.parts, position: o.position }, [], { reseat: true, maxParts })
   const now = performance.now()
   let extra = 0
   const parts = fin.parts.map((p, k) => ({ ...p, born: o.parts[k]?.born ?? now + extra++ * ASSEMBLY_STAGGER }))

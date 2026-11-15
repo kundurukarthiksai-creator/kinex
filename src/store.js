@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 let seq = 0
 export const newId = (name = 'thing') =>
-  `${String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 18) || 'thing'}-${++seq}`
+  `${String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 18) || 'thing'}-${Date.now().toString(36)}-${++seq}`
 
 // Rapier rigid bodies + three groups, keyed by object id. Kept outside React so
 // hand tracking can move things every frame without re-rendering anything.
@@ -11,6 +11,13 @@ export const groups = new Map()
 
 export const useKinex = create((set, get) => ({
   objects: [],
+  projectName: 'Orbital playground',
+  workspaceReady: false,
+  saveState: 'saving',
+  savedAt: null,
+  showGrid: true,
+  handTool: 'move',
+  renderQuality: 'high',
   bursts: [],
   environment: { preset: 'studio', gravity: 'normal' },
   hoverId: null,
@@ -21,6 +28,7 @@ export const useKinex = create((set, get) => ({
   listening: false,
   scanning: false,
   camera: 'off', // off | starting | on | denied
+  cameraError: '',
   lastId: null, // the object you touched or built most recently
   inspectId: null, // object open in Inspect mode
   inspect: { explode: 0, wireframe: false, spin: false, focusPart: null, refining: false },
