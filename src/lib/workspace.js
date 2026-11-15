@@ -1,4 +1,4 @@
-import { useKinex, bodies, newId } from '../store.js'
+import { useKinex, bodies, newId, MAX_OBJECTS } from '../store.js'
 import { sanitizePart } from '../ai/apply.js'
 import { PHYSICS, BEHAVIORS, PRESETS, GRAVITY } from '../ai/schema.js'
 import { loadStarter } from './starters.js'
@@ -60,7 +60,7 @@ export function serializeObjects(objects, liveBodies = bodies) {
 }
 
 export function normalizeSavedObjects(objects) {
-  if (!Array.isArray(objects) || objects.length > 100) throw new Error('Invalid saved world.')
+  if (!Array.isArray(objects) || objects.length > MAX_OBJECTS) throw new Error('Invalid saved world.')
   const ids = new Map()
   const normalized = objects.map((o) => {
     if (!o || !Array.isArray(o.parts) || !o.parts.length || o.parts.length > 96) throw new Error('Invalid saved model.')

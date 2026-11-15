@@ -4,7 +4,7 @@ import { inspectPose } from '../scene/interaction.js'
 
 // Camera + Inspect controller. Stage registers the CameraControls instance here so
 // UI, voice and hands can all drive the same camera.
-export const viewer = { controls: null, camera: null, saved: null }
+export const viewer = { controls: null, camera: null, saved: null, pendingInspect:null }
 
 const WORLD_LIMITS = { minPolarAngle: 0.05, maxPolarAngle: Math.PI / 2.08, minDistance: 5, maxDistance: 24 }
 const INSPECT_LIMITS = { minPolarAngle: 0, maxPolarAngle: Math.PI, minDistance: 0.4, maxDistance: 40 }
@@ -50,7 +50,9 @@ function distanceFor(radius) {
 export function enterInspect(id) {
   const st = useKinex.getState()
   const obj = st.objects.find((o) => o.id === id)
-  if (!obj || !viewer.controls) return
+  if(!obj)return
+  if(!viewer.controls){viewer.pendingInspect=id;return}
+  viewer.pendingInspect=null
   if (!st.inspectId) {
     viewer.saved = {
       position: viewer.controls.getPosition(new THREE.Vector3()),
@@ -65,7 +67,14 @@ export function enterInspect(id) {
   snapView('iso')
 }
 
+export function flushPendingInspect(){
+  const id=viewer.pendingInspect
+  viewer.pendingInspect=null
+  if(id)enterInspect(id)
+}
+
 export function exitInspect() {
+  viewer.pendingInspect=null
   const st = useKinex.getState()
   if (!st.inspectId) return
   st.set({ inspectId: null })

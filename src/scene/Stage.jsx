@@ -11,7 +11,7 @@ import { HandRig } from './HandRig.jsx'
 import { world } from '../lib/exportGltf.js'
 import { DYNAMIC } from './interaction.js'
 import { InspectView } from './InspectView.jsx'
-import { viewer } from '../lib/viewer.js'
+import { viewer, flushPendingInspect } from '../lib/viewer.js'
 
 // The world is a photo-studio cyclorama: floor and backdrop share one color and fog
 // erases the horizon, so every object reads like a product shot.
@@ -116,9 +116,12 @@ function World() {
   const projectName = useKinex((s) => s.projectName)
   const inspecting = useKinex((s) => Boolean(s.inspectId))
   const root = useRef()
-  useEffect(() => {
-    world.root = root.current
-  }, [])
+  useEffect(()=>{
+    const group=root.current
+    world.root=group
+    useKinex.getState().set({viewReady:Boolean(viewer.controls)})
+    return()=>{if(world.root===group){world.root=null;useKinex.getState().set({viewReady:false})}}
+  },[])
   return (
     <group ref={root} name={projectName || 'world'} visible={!inspecting}>
       {objects.map((o) => (
@@ -140,6 +143,9 @@ function RegisterViewer() {
     viewer.camera = camera
     viewer.controls = controls
     controls.setLookAt(0, 4.2, 13, 0, 1.1, 0, false)
+    flushPendingInspect()
+    useKinex.getState().set({viewReady:Boolean(world.root)})
+    return()=>{if(viewer.controls===controls){viewer.controls=null;viewer.camera=null;useKinex.getState().set({viewReady:false})}}
   }, [camera, controls])
   return null
 }

@@ -39,3 +39,9 @@ describe('spawn location', () => {
     expect(toActions({ spawn: [{ at: [1, 0, 2], name: 'x', parts: [] }] })[0].position).toEqual([1, 0, 2])
   })
 })
+
+describe('AI response root validation',()=>{
+  it('rejects valid JSON values that cannot describe a scene',()=>{
+    for(const text of ['null','[]','true','5','"hello"'])expect(()=>extractJson(text)).toThrow()
+  })
+})

@@ -75,6 +75,7 @@ export function resolveTarget(ref, objects, focusFallback = true) {
     if (exact) return exact
     const byName = [...objects].reverse().find((o) => o.name.toLowerCase().includes(r) || r.includes(o.name.toLowerCase()))
     if (byName) return byName
+    return null
   }
   if (!focusFallback) return null
   const focus = inspectId || heldIds[0] || lastId || hoverId
@@ -121,8 +122,7 @@ export function streamSpawns(plan, live, { maxParts = MAX_PARTS } = {}) {
       const obj = buildObject({ ...s, position: at, parts: ready, behavior: undefined }, st.objects, { reseat: false, maxParts })
       obj.building = true
       obj.parts = obj.parts.map((p, k) => ({ ...p, born: now + k * ASSEMBLY_STAGGER }))
-      live.set(i, { id: obj.id, n: ready.length })
-      st.addObject(obj)
+      if(st.addObject(obj))live.set(i,{id:obj.id,n:ready.length})
     } else if (ready.length > entry.n) {
       const o = st.objects.find((x) => x.id === entry.id)
       if (!o) return
@@ -138,7 +138,7 @@ export function streamSpawns(plan, live, { maxParts = MAX_PARTS } = {}) {
 // finalized in place instead of being built again.
 export function applyActions(plan, live = new Map(), { maxParts = MAX_PARTS } = {}) {
   const st = useKinex.getState()
-  const actions = toActions(plan).slice(0, 12)
+  const actions = toActions(plan).slice(0, 38)
   const spawned = []
   let delay = 0
   let spawnIndex = -1
@@ -147,6 +147,7 @@ export function applyActions(plan, live = new Map(), { maxParts = MAX_PARTS } = 
     switch (a?.type) {
       case 'spawn': {
         spawnIndex++
+        if(!Array.isArray(a.parts)||!a.parts.length)break
         const entry = live.get(spawnIndex)
         const existing = entry && useKinex.getState().objects.find((o) => o.id === entry.id)
         if (existing) {
@@ -165,8 +166,7 @@ export function applyActions(plan, live = new Map(), { maxParts = MAX_PARTS } = 
           }
         }
         obj.born += delay
-        spawned.push(obj)
-        useKinex.getState().addObject(obj)
+        if(useKinex.getState().addObject(obj))spawned.push(obj)
         delay += 260 + obj.parts.length * 30
         break
       }

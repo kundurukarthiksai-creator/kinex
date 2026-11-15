@@ -8,6 +8,8 @@ import { applyAppearance } from './appearance.js'
 const gltf = new GLTFLoader()
 const cache = new Map() // url -> Promise<THREE.Object3D>
 
+export const forgetModel = url => cache.delete(url)
+
 // Loads a model by format: glb / gltf (generated or imported), obj, stl.
 export function loadModel(url, format = 'glb') {
   if (!cache.has(url)) {
@@ -15,7 +17,7 @@ export function loadModel(url, format = 'glb') {
       url,
       new Promise((resolve, reject) => {
         if (format === 'obj') {
-          import('three/examples/jsm/loaders/OBJLoader.js').then(({ OBJLoader }) => new OBJLoader().load(url, resolve, undefined, reject))
+          import('three/examples/jsm/loaders/OBJLoader.js').then(({ OBJLoader }) => new OBJLoader().load(url, resolve, undefined, reject)).catch(reject)
         } else if (format === 'stl') {
           import('three/examples/jsm/loaders/STLLoader.js').then(({ STLLoader }) =>
             new STLLoader().load(
@@ -27,7 +29,7 @@ export function loadModel(url, format = 'glb') {
               undefined,
               reject,
             ),
-          )
+          ).catch(reject)
         } else gltf.load(url, (g) => resolve(g.scene), undefined, reject)
       }).catch((error) => { cache.delete(url); throw error }),
     )

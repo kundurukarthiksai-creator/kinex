@@ -46,7 +46,7 @@ Without a chat key, the local model library, curated starters, basic shapes, und
 - **Fast, bounded commands:** common edits and simple recipes run locally. Custom AI requests stream parts, have an 18-second total budget (35 seconds for photos/refinement), and can be canceled. A failed connection enables a local fallback and a 30-second retry cooldown. Repeating a completed pure-creation request in the session reuses its cached AI plan. Partial geometry is retained and labeled if the stream stops.
 - **Voice lifecycle:** interim text previews, one submission of final text per session, clear microphone/network errors, retry support and cancellation of stale events.
 - **Responsive workspace:** a tools drawer on small screens, a focus mode for demonstrations, and a keyboard-accessible guide.
-- **Import and export:** open GLB, embedded GLTF, OBJ and STL models; export the world or inspected model as a binary GLB.
+- **Import and export:** open GLB, embedded GLTF, OBJ and STL models; export the world or inspected model as a binary GLB. Imports are cancelable, limited to 30 MB, and checked for empty/non-finite geometry, excessive mesh complexity and oversized textures. Asset loads time out after 15 seconds. The world is capped at 100 models so a saved scene remains restorable.
 
 The local save is specific to this browser and origin. Use Export to keep a portable copy. Camera reference photos are excluded from automatic project saves.
 
@@ -109,6 +109,10 @@ Check camera and microphone permissions on the demo laptop before presenting. Ke
 The ship is generated reproducibly from native Three.js geometry by `node scripts/models/build-ship.mjs`. It is the detailed passenger-ship design offered by Kinex; it is not newly inferred from every prompt or reference image. Its eight material sections support independent colors. Other supported library subjects resolve to existing textured GLB files bundled locally. Their Microsoft CC0-1.0 notices and pinned source checksums are in `public/models/`.
 
 Novel subjects still use Gemini’s bounded primitive construction, and photo input still produces an approximation. Photorealistic arbitrary text-to-3D or accurate single-photo reconstruction needs a separate mesh-generation service; a chat API key alone does not provide it.
+
+## Strict audit
+
+See [the strict audit](docs/strict-audit.md) for tested behavior, fixes, remaining limitations and the required live laptop checks. Automated test success does not establish physical gesture accuracy, speech accuracy, teaching effectiveness or production readiness.
 
 ## Explaining Kinex to judges
 

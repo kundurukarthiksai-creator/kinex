@@ -54,14 +54,15 @@ function body(model, messages, rung, maxTokens, schema) {
 export function extractJson(text) {
   let s = String(text || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
   s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '')
-  try {
-    return JSON.parse(s)
-  } catch {
-    const start = s.indexOf('{')
-    const end = s.lastIndexOf('}')
-    if (start >= 0 && end > start) return JSON.parse(s.slice(start, end + 1))
-    throw new LLMError('The model did not return JSON.')
+  let plan
+  try { plan=JSON.parse(s) }
+  catch {
+    const start=s.indexOf('{'),end=s.lastIndexOf('}')
+    if(start<0||end<=start)throw new LLMError('The model did not return JSON.')
+    plan=JSON.parse(s.slice(start,end+1))
   }
+  if(!plan||typeof plan!=='object'||Array.isArray(plan))throw new LLMError('The model did not return a scene object.')
+  return plan
 }
 
 // Streams one completion. onText receives the full text so far after every chunk.

@@ -1,4 +1,4 @@
-import { useKinex, describeScene } from '../store.js'
+import { useKinex, describeScene, MAX_OBJECTS } from '../store.js'
 import { planFromText, planFromImage, planDetail, hasLLM } from './llm.js'
 import { offlinePlan } from './fallback.js'
 import { localPlan, isCreation, partColorsFromText, COLORS } from './local.js'
@@ -21,19 +21,31 @@ function finish(plan, note, live, source, maxParts = 32) {
   const before = new Set(useKinex.getState().objects.map((object)=>object.id))
   const ids = applyActions(plan, live, {maxParts})
   const state = useKinex.getState()
+  for(const entry of live.values()){
+    const object=useKinex.getState().objects.find(item=>item.id===entry.id)
+    if(object?.building)state.updateObject(object.id,{building:false})
+  }
   if(source){
     const liveIds = new Set([...live?.values?.() || []].map((entry)=>entry.id))
     state.set({objects:state.objects.map((object)=>!before.has(object.id)||liveIds.has(object.id)||ids.includes(object.id)?{...object,source:object.source||source}:object)})
   }
   const narration = typeof plan.narration==='string'?plan.narration.slice(0,600):''
-  state.set({narration:note?`${note} ${narration}`.trim():narration})
+  state.set({narration:state.limitNotice?`The world limit is ${MAX_OBJECTS} models. Kept the models that fit; delete some before adding more.`:note?`${note} ${narration}`.trim():narration})
   state.setStatus('done')
+  return [...new Set([...ids,...[...live.values()].map(entry=>entry.id)])].filter(id=>useKinex.getState().objects.some(object=>object.id===id))
 }
 
 function instant(plan, kind='local') {
   const state=useKinex.getState(),started=performance.now()
+  for(const action of plan.actions||[]){
+    if(action.type!=='modify'&&action.type!=='delete')continue
+    const object=resolveTarget(action.targetId,state.objects)
+    if(!object){state.setStatus('error',action.targetId?`Could not find “${action.targetId}”. Select a model or use its name.`:'Create or select a model first.');return}
+    if(action.colorPart&&!object.source?.colorParts?.includes(action.colorPart)){state.setStatus('error',`This model has no separate ${action.colorPart} color section. Use a whole-model color or choose the ship.`);return}
+  }
+  state.set({limitNotice:false})
   const token=state.beginChange('Edit world')
-  const maxParts = Math.min(96, Math.max(32, ...(plan.spawn || []).map((object) => object.parts?.length || 0)))
+  const maxParts = Math.min(96, Math.max(32, ...(Array.isArray(plan.spawn)?plan.spawn:[]).map(object=>Array.isArray(object?.parts)?object.parts.length:0)))
   finish(plan,'',new Map(),undefined,maxParts)
   if(token)state.commitChange(token)
   state.set({lastOperation:{kind,ms:Math.round(performance.now()-started)}})
@@ -46,7 +58,8 @@ export async function runCommand(raw) {
   if(!text)return
   const state=useKinex.getState()
   if(/^(?:cancel|stop building|cancel creation)$/i.test(text))return cancelOperation()
-  if(state.status.kind==='thinking')return
+  if(state.status.kind==='thinking'||state.operation)return
+  if(isCreation(text)&&state.objects.length>=MAX_OBJECTS){state.setStatus('error',`This world already has ${MAX_OBJECTS} models. Delete a model or start a new world first.`);return}
   state.setSubtitle(text,false)
   if(/^undo(?: that| it)?[.!]?$/i.test(text)){if(!undoWorld())state.set({narration:state.transaction?'Release the object first.':'There is nothing to undo yet.'});return}
   if(/^redo(?: that| it)?[.!]?$/i.test(text)){if(!redoWorld())state.set({narration:'There is nothing to redo yet.'});return}
@@ -56,7 +69,7 @@ export async function runCommand(raw) {
   if(/^(export|download|save)( (it|this|the world|world|scene|everything|the model|model))?\.?$/i.test(text))return exportNow()
   if(/\b(summon|scan|copy|replicate) (this|that|it)\b/i.test(text))return summon()
   if(inspectIntent(text))return
-  if(/^(?:add|more) detail(?: to it)?$/i.test(text))return addDetail()
+  if(/^(?:add(?: more)?|more) details?(?: to (?:it|this|that))?$/i.test(text))return addDetail()
   if(/\bmake (it|this|that|the \w+) (hd|real|realistic|high.?def(inition)?)\b|\b(hd|realistic) (version|model)\b/i.test(text)){
     const object=resolveTarget(text.match(/the (\w+) (hd|real)/i)?.[1]||null,state.objects)
     if(!object){state.setStatus('error','Create an object first.');return}
@@ -113,7 +126,7 @@ export async function runCommand(raw) {
     finish(plan,plan.__partial?'Kept the completed parts after the AI stopped.':'',live,{text,kind:'generated'},maxParts)
     state.set({aiState:plan.__partial?'degraded':'ready',lessonChecks:{...useKinex.getState().lessonChecks,created:true}})
     unavailableUntil=0
-    if(isCreation(text)&&plan.spawn?.length&&!plan.modify?.length&&!plan.remove?.length&&!plan.clear&&!plan.environment&&!plan.__partial){
+    if(isCreation(text)&&Array.isArray(plan.spawn)&&plan.spawn.length&&plan.spawn.every(object=>object&&typeof object==='object'&&Array.isArray(object.parts)&&object.parts.length)&&!plan.modify?.length&&!plan.remove?.length&&!plan.clear&&!plan.environment&&!plan.__partial){
       cache.set(text.toLowerCase(),structuredClone(plan));if(cache.size>12)cache.delete(cache.keys().next().value)
     }
   }catch(error){
@@ -133,8 +146,10 @@ export async function summon({frame:suppliedFrame,maxParts=PHOTO_PARTS_LIMIT}={}
   const frame=suppliedFrame||captureFrame()
   if(!frame){state.setStatus('error','Enable your camera to capture an object.');return}
   if(!hasLLM){state.setStatus('error','Photo reconstruction needs an AI connection. Local models and shapes still work.');return}
+  if(state.objects.length>=MAX_OBJECTS){state.setStatus('error',`The world limit is ${MAX_OBJECTS} models. Delete one before reconstructing another.`);return}
   const operation=beginOperation('Study your object')
   if(!operation)return
+  exitInspect()
   state.setSubtitle('Reconstruct this object',false)
   state.set({scanning:true})
   const live=new Map()
@@ -145,8 +160,9 @@ export async function summon({frame:suppliedFrame,maxParts=PHOTO_PARTS_LIMIT}={}
     },{maxParts,signal:operation.controller.signal})
     operation.controller.signal.throwIfAborted()
     if(!plan.spawn?.some((object)=>object.parts?.length)){state.setStatus('error','Hold one object near the center in good light, then try again.');return}
-    finish(plan,plan.__partial?'Rebuilt the completed features.':'',live,{text:'summon',photo:`data:image/jpeg;base64,${frame}`,maxParts,kind:'photo'},maxParts)
+    const created=finish(plan,plan.__partial?'Rebuilt the completed features.':'',live,{text:'summon',photo:`data:image/jpeg;base64,${frame}`,maxParts,kind:'photo'},maxParts)
     state.set({aiState:'ready'})
+    if(created[0])enterInspect(created[0])
   }catch(error){if(!operation.controller.signal.aborted)state.setStatus('error','Photo reconstruction is unavailable. Your existing world is unchanged; local models still work.')}
   finally{state.set({scanning:false});endOperation(operation,'photo')}
 }
@@ -161,6 +177,7 @@ export async function exportNow(){
 // Inspect-mode phrases handled locally, so they're instant. Returns true if handled.
 export function inspectIntent(raw) {
   const t = raw.toLowerCase().replace(/[.!?]+$/, '').trim()
+  if(isCreation(t)&&!/^add(?: more)? details?(?: to (?:it|this|that))?$/.test(t))return false
   const st = useKinex.getState()
   const inspecting = Boolean(st.inspectId)
 

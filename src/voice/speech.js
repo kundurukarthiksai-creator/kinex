@@ -19,7 +19,8 @@ export function startListening() {
   if(state.status.kind==='thinking'||recognition)return
   if(!Recognition){state.set({voiceState:'error',voiceError:'Voice is available in Chrome and Edge.'});state.setStatus('error','Voice is available in Chrome and Edge. You can type the same commands.');return}
   const ticket=++session
-  const current=new Recognition()
+  let current
+  try{current=new Recognition()}catch{state.set({voiceState:'error',voiceError:'The microphone could not start. Try typing your command.'});state.setStatus('error','The microphone could not start. Try typing your command.');return}
   recognition=current
   const segments=new Map()
   let failed=false,canceled=false,completed=false
@@ -59,7 +60,7 @@ export function startListening() {
     const text=[...segments].sort(([a],[b])=>a-b).filter(([,value])=>value.final).map(([,value])=>value.text).join(' ').trim()
     if(!failed&&!canceled&&text){
       runCommand(text)
-    }else if(!failed&&state.status.kind==='listening'){state.setStatus('idle');state.setSubtitle('',false)}
+    }else if(!failed&&useKinex.getState().status.kind==='listening'){state.setStatus('idle');state.setSubtitle('',false)}
   }
   try{current.start()}
   catch{
@@ -74,7 +75,9 @@ export function cancelListening() {
   session++
   recognition?.abort()
   recognition=null
-  useKinex.getState().set({listening:false,voiceState:'idle'})
+  const state=useKinex.getState()
+  state.set({listening:false,voiceState:'idle'})
+  if(state.status.kind==='listening'){state.setStatus('idle');state.setSubtitle('',false)}
 }
 export function toggleListening() { if(recognition)stopListening();else startListening() }
 if(import.meta.hot)import.meta.hot.dispose(()=>cancelListening())

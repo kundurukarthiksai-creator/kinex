@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useKinex, dominantColor, newId, bodies } from '../store.js'
+import { useKinex, MAX_OBJECTS, dominantColor, newId, bodies } from '../store.js'
 import { STARTERS, loadStarter } from '../lib/starters.js'
 import { enterInspect, exitInspect } from '../lib/viewer.js'
 import { Icon } from './Icon.jsx'
@@ -27,7 +27,7 @@ export function Sidebar({ panel = 'models', onClose }) {
   const duplicate=object=>{
     const state=useKinex.getState(),token=state.beginChange('Duplicate object'),t=bodies.get(object.id)?.translation()
     const copy={...object,id:newId(object.name),name:`${object.name} copy`.slice(0,40),position:[Math.min(6,(t?.x??object.position[0])+1.5),Math.max(0,(t?.y??object.position[1])-.02),t?.z??object.position[2]],born:performance.now(),parts:object.parts.map(({born,...part})=>({...part})),rev:0}
-    state.addObject(copy)
+    if(!state.addObject(copy)){if(token)state.commitChange(token);return}
     if(state.hd[object.id]?.status==='ready')state.setHD(copy.id,{...state.hd[object.id],name:copy.name})
     if(token)state.commitChange(token)
   }
@@ -48,7 +48,7 @@ export function Sidebar({ panel = 'models', onClose }) {
         {inspecting&&panel==='edit'?<InspectPanel onDone={onClose}/>:<>
           <div className="selection-details"><h4>{current.name}</h4><label className="scale-field"><span>Size <strong>{current.scale.toFixed(2)}×</strong></span><input aria-label="Object scale" type="range" min="0.2" max="3" step="0.05" value={current.scale} disabled={busy} onPointerDown={()=>{scaleChange.current=useKinex.getState().beginChange('Resize object')}} onPointerUp={finishScale} onPointerCancel={finishScale} onKeyDown={()=>{scaleChange.current??=useKinex.getState().beginChange('Resize object')}} onKeyUp={finishScale} onBlur={finishScale} onChange={e=>useKinex.getState().updateObject(current.id,{scale:Number(e.target.value)})}/></label><ModelAppearance key={current.id} object={current}/><button data-hand className="button button-secondary inspect-drawer-action" disabled={busy} onClick={()=>{enterInspect(current.id);onClose()}}><Icon name="inspect" size={15}/>Inspect model</button></div>
         </>}
-        <div className="object-actions"><button data-hand className="button button-small button-secondary" disabled={busy} onClick={()=>{exitInspect();duplicate(current)}}><Icon name="copy" size={14}/>Duplicate</button><button data-hand className="button button-small button-danger" disabled={busy} onClick={()=>{exitInspect();useKinex.getState().removeObject(current.id)}}><Icon name="trash" size={14}/>Delete</button></div>
+        <div className="object-actions"><button data-hand className="button button-small button-secondary" disabled={busy||objects.length>=MAX_OBJECTS} onClick={()=>{exitInspect();duplicate(current)}}><Icon name="copy" size={14}/>Duplicate</button><button data-hand className="button button-small button-danger" disabled={busy} onClick={()=>{exitInspect();useKinex.getState().removeObject(current.id)}}><Icon name="trash" size={14}/>Delete</button></div>
       </>}
     </>}
   </div>

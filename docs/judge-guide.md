@@ -93,7 +93,7 @@ Do not claim that no other product combines these technologies, or that the idea
 
 ### 13. How fast is it?
 
-“Local edits do not wait for an AI round trip. A recent automated custom lighthouse request completed in roughly 2–3 seconds, but latency varies. Text requests have an 18-second total budget; photo and refinement requests have a 35-second budget. Cancellation and local fallbacks keep the workspace usable.”
+“Local edits do not wait for an AI round trip. Observed request times varied with model complexity and server conditions; custom creation should not be promised to complete in a fixed number of seconds. Text requests have an 18-second total budget; photo and refinement requests have a 35-second budget. Cancellation and local fallbacks keep the workspace usable.”
 
 These are observations and limits, not guaranteed response times. The renderer and hand inference run at different rates; we cap hand inference at 24 fps and display its measured rate in Tracking details.
 
@@ -113,7 +113,7 @@ The current prototype is a local development/preview application. A public deplo
 
 ### 17. How reliable is it, and what did you test?
 
-“We have 57 automated tests covering scene logic, gestures, history, persistence, parsing, voice lifecycle and material edits. Browser checks exercise the actual workflows, exports, reloads, worker startup and simulated AI outages. Controlled landmark tests verify rotation and two-hand interactions. We still need live testing on the presentation laptop and in venue lighting.”
+“We have 83 automated tests covering scene logic, gestures, history, persistence, parsing, voice lifecycle and material edits. Browser checks exercise the actual workflows, exports, reloads, worker startup and simulated AI outages. Controlled landmark tests verify rotation and two-hand interactions. We still need live testing on the presentation laptop and in venue lighting.”
 
 Do not describe mocked speech events as proof of real speech accuracy, or automated camera input as a physical usability study. Update the numbers if tests change.
 

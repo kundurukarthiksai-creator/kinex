@@ -2,9 +2,13 @@ export const COLORS = { red:'#E5484D',blue:'#2F5BFF',green:'#3FA36B',yellow:'#FF
 export const normalizeCommand = (text) => String(text).toLowerCase().trim().replace(/[.!?]+$/,'').replace(/^(?:can|could|would) you(?: please)?\s+/,'').replace(/^please\s+/,'').replace(/^(?:i (?:want|need|would like)|i'd like)(?: you)?(?: to)?\s+/,'')
 export const isCreation = (text) => /^(?:create|spawn|add|build|generate|draw|give me|show me|make (?:me )?(?:a|an|one)|a|an)\b/i.test(normalizeCommand(text))
 
-const target = (text) => {
-  const match = text.match(/^(?:make|paint|colou?r|turn|change|move|rotate|delete|remove)\s+(?:the\s+)?(.+?)(?:\s+(?:bigger|larger|smaller|red|blue|green|yellow|orange|purple|pink|white|black|gold|silver|teal|brown|cyan|metal|metallic|matte|plastic|glass|wood|left|right|up|down|closer|farther|\d+))?(?:\s|$)/)
-  return match && !/^(?:it|this|that|object|model)$/.test(match[1]) ? match[1] : undefined
+const target = text => {
+  const match=text.match(/^(?:make|paint|colou?r|turn|change|move|rotate|delete|remove|scale|resize)\s+(?:the\s+)?(.+)$/)
+  if(!match)return undefined
+  const modifiers=[...Object.keys(COLORS),'bigger','larger','smaller','metal','metallic','matte','plastic','glass','wood','wooden','glow','glowing','float','left','right','up','down','closer','farther','further','[xyz](?:[ -]*axis)?','-?\\d+(?:\\.\\d+)?'].join('|')
+  let name=match[1].replace(new RegExp(`\\s+(?:(?:to|into|by|on|around|about)\\s+)?(?:${modifiers})(?:\\b|$)[\\s\\S]*$`),'').trim()
+  name=name.replace(/\s+(?:hull|decks?|windows?|rails?|trim|lifeboats?|funnels?|vents?|colou?r)$/,'')
+  return !name||/^(?:it|this|that|object|model|hull|decks?|windows?|rails?|trim|lifeboats?|funnels?|vents?)$/.test(name)||/^-?\d/.test(name)?undefined:name
 }
 
 export function partColorsFromText(raw) {
@@ -22,7 +26,7 @@ export function localPlan(raw) {
   const text = normalizeCommand(raw)
   if (isCreation(text)) return null
   const modify = (patch, narration) => ({ narration, actions:[{type:'modify',targetId:target(text),...patch}] })
-  if (/^(?:clear|reset|delete|remove)(?: (?:the |this )?(?:world|scene|everything|all|all objects))?$/.test(text)) return {narration:'A clean canvas.',actions:[{type:'clear'}]}
+  if (/^(?:(?:clear|reset)(?: (?:the |this )?(?:world|scene|everything|all|all objects))?|(?:delete|remove) (?:the |this )?(?:world|scene|everything|all|all objects))$/.test(text)) return {narration:'A clean canvas.',actions:[{type:'clear'}]}
   if (/^(?:delete|remove)(?: (?:it|this|that|the .+))?$/.test(text)) return {narration:'Object removed.',actions:[{type:'delete',targetId:target(text)}]}
   if (/^(?:turn (?:off|on) (?:the )?gravity|(?:set |switch to )?(?:zero|no|moon|earth|normal|low)[ -]?gravity|gravity (?:off|on|zero|earth|moon))$/.test(text)) {
     const gravity=/off|zero|no /.test(text)?'zero':/moon|low/.test(text)?'low':'normal'
@@ -35,12 +39,12 @@ export function localPlan(raw) {
   if(size)return modify({scale:Math.min(4,Math.max(.25,Number(size[1])))},'Size updated.')
   if(/^(?:make|paint|colou?r|turn|change)\b/.test(text)){
     const partColors=partColorsFromText(text)
-    if(Object.keys(partColors).length)return {narration:'Updated the model’s color sections.',actions:Object.entries(partColors).map(([colorPart,color])=>({type:'modify',colorPart,color}))}
+    if(Object.keys(partColors).length)return {narration:'Updated the model’s color sections.',actions:Object.entries(partColors).map(([colorPart,color])=>({type:'modify',targetId:target(text),colorPart,color}))}
     const color=Object.keys(COLORS).find((word)=>new RegExp(`\\b${word}\\b`).test(text))
     const section=text.match(/\b(hull|decks?|windows?|rails?|lifeboats?|funnels?|vents?)\b/)
     if(color&&section){const part=section[1].replace(/^(deck|window|rail|lifeboat|vent)$/,'$1s').replace(/^funnels$/,'funnel');return modify({color:COLORS[color],colorPart:part},`Changed ${section[1]} to ${color}.`)}
     if(color)return modify({color:COLORS[color]},`Changed the color to ${color}.`)
-    const material=text.match(/\b(metal|metallic|matte|plastic|glass|wood|wooden|glowing)\b/)
+    const material=text.match(/\b(metal|metallic|matte|plastic|glass|wood|wooden|glow|glowing)\b/)
     if(material)return modify({material:{metallic:'metal',wooden:'wood',glowing:'glow'}[material[1]]||material[1]},'Surface material updated.')
     if(/\bfloat$/.test(text))return modify({physics:'float',behavior:{kind:'float',speed:.35}},'The object is floating.')
   }

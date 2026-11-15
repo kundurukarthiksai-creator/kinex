@@ -9,7 +9,7 @@ export function beginOperation(label) {
   const token = state.beginChange(label)
   const operation = { label, token, controller:new AbortController(), started:performance.now() }
   active = operation
-  state.set({ operation:{label}, narration:'' })
+  state.set({ operation:{label}, narration:'', limitNotice:false })
   state.setStatus('thinking',label)
   return operation
 }

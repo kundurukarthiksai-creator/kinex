@@ -9,7 +9,7 @@ class Recognition {
  abort(){this.onerror?.({error:'aborted'});this.onend?.()}
 }
 vi.stubGlobal('window',{SpeechRecognition:Recognition})
-const {startListening,cancelListening}=await import('./speech.js')
+const {startListening,stopListening,cancelListening}=await import('./speech.js')
 const {useKinex}=await import('../store.js')
 const result=text=>{const r=[{transcript:text}];r.isFinal=true;return{resultIndex:0,results:[r]}}
 beforeEach(()=>{cancelListening();runCommand.mockClear();useKinex.setState({status:{kind:'idle'},voiceError:''})})
@@ -31,4 +31,13 @@ describe('voice lifecycle',()=>{
   startListening();const r=Recognition.latest;cancelListening();r.onresult(result('delete it'));r.onend()
   expect(runCommand).not.toHaveBeenCalled();expect(useKinex.getState().listening).toBe(false)
  })
+ it('returns to idle when listening ends without a final transcript',()=>{
+  startListening();expect(useKinex.getState().status.kind).toBe('listening');stopListening()
+  expect(useKinex.getState().status.kind).toBe('idle');expect(useKinex.getState().listening).toBe(false)
+ })
+ it('clears listening feedback when a session is canceled',()=>{
+  startListening();cancelListening()
+  expect(useKinex.getState().status.kind).toBe('idle');expect(useKinex.getState().subtitle.text).toBe('')
+ })
+
 })

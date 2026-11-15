@@ -3,6 +3,7 @@ import { create } from 'zustand'
 let seq = 0
 let transactionSeq = 0
 const HISTORY_LIMIT = 30
+export const MAX_OBJECTS=100
 export const newId = (name = 'thing') =>
   `${String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 18) || 'thing'}-${Date.now().toString(36)}-${++seq}`
 
@@ -49,7 +50,7 @@ export const useKinex = create((set, get) => {
     }
   }
   return {
-    objects: [], projectName: 'Orbital playground', workspaceReady: false, saveState: 'saving', savedAt: null,
+    objects: [], projectName: 'Orbital playground', workspaceReady: false, viewReady:false, saveState: 'saving', savedAt: null,
     showGrid: true, handTool: 'move', renderQuality: 'high', worldEpoch: 0,
     past: [], future: [], transaction: null,
     environment: { preset: 'studio', gravity: 'normal' }, bursts: [], hoverId: null, heldIds: [],
@@ -57,7 +58,7 @@ export const useKinex = create((set, get) => {
     listening: false, voiceState: 'idle', voiceError: '', scanning: false,
     camera: 'off', cameraError: '', handsSeen: 0, gestures: ['none', 'none'],
     trackingMode: 'off', trackingFPS: 0, interactionMessage: '',
-    aiState: 'ready', operation: null, lastOperation: null,
+    aiState: 'ready', operation: null, lastOperation: null, limitNotice:false,
     lastId: null, inspectId: null,
     inspect: { explode: 0, wireframe: false, spin: false, focusPart: null, refining: false },
     hd: {},
@@ -98,7 +99,11 @@ export const useKinex = create((set, get) => {
       restore(entry.after, { past: [...state.past, entry], future: state.future.slice(0, -1), narration: `Redid: ${entry.label}.`, status: { kind: 'done', text: '' } })
       return true
     },
-    addObject: (object) => recordMutation(`Create ${object.name}`, (state) => ({ objects: [...state.objects, object], lastId: object.id })),
+    addObject: object => {
+      if(get().objects.length>=MAX_OBJECTS){set({limitNotice:true});return false}
+      recordMutation(`Create ${object.name}`,state=>({objects:[...state.objects,object],lastId:object.id}))
+      return true
+    },
     updateObject: (id, patch) => {
       if (!get().objects.some((object) => object.id === id)) return
       recordMutation('Edit object', (state) => ({ objects: state.objects.map((object) => object.id === id ? { ...object, ...patch, rev: (object.rev || 0) + 1 } : object) }))

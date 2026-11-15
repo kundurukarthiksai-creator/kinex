@@ -89,13 +89,16 @@ export function schemaForParts(limit) {
 }
 
 // Turns a model response into the ordered action list the world understands.
+const record = value => value && typeof value === 'object' && !Array.isArray(value)
+const list = value => Array.isArray(value) ? value.slice(0,12) : []
 export function toActions(plan) {
-  if (Array.isArray(plan?.actions)) return plan.actions // offline builder shape
+  if (!record(plan)) return []
+  if (Array.isArray(plan.actions)) return plan.actions.filter(record).slice(0,38)
   const actions = []
-  if (plan?.clear) actions.push({ type: 'clear' })
-  for (const id of plan?.remove || []) actions.push({ type: 'delete', targetId: id })
-  for (const m of plan?.modify || []) actions.push({ ...m, type: 'modify' })
-  for (const s of plan?.spawn || []) actions.push({ ...s, position: s.at ?? s.position, type: 'spawn' })
-  if (plan?.environment && (plan.environment.preset || plan.environment.gravity)) actions.push({ ...plan.environment, type: 'environment' })
+  if (plan.clear === true) actions.push({type:'clear'})
+  for (const id of list(plan.remove)) if(typeof id==='string'&&id.trim())actions.push({type:'delete',targetId:id})
+  for (const item of list(plan.modify)) if(record(item))actions.push({...item,type:'modify'})
+  for (const item of list(plan.spawn)) if(record(item))actions.push({...item,position:item.at??item.position,type:'spawn'})
+  if(record(plan.environment)&&(plan.environment.preset||plan.environment.gravity))actions.push({...plan.environment,type:'environment'})
   return actions
 }

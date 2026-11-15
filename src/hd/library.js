@@ -1,19 +1,17 @@
 import * as THREE from 'three'
 import { MODEL_CATALOG, modelURL } from './catalog.js'
 import { loadModel } from './HDModel.jsx'
+import { awaitModel } from './validateModel.js'
 import { buildObject } from '../ai/apply.js'
-import { useKinex, bodies } from '../store.js'
+import { useKinex, bodies, MAX_OBJECTS } from '../store.js'
 
 export async function addLibraryModel(assetId, { position = [0,0,0], signal, replaceId } = {}) {
+  if(!replaceId&&useKinex.getState().objects.length>=MAX_OBJECTS)throw new Error(`The world limit is ${MAX_OBJECTS} models.`)
   const asset = MODEL_CATALOG.find((item) => item.id === assetId)
   if (!asset) throw new Error('Unknown library model')
   const url = modelURL(asset)
   signal?.throwIfAborted()
-  const scene = await new Promise((resolve,reject)=>{
-    const abort=()=>reject(new DOMException('Canceled','AbortError'))
-    signal?.addEventListener('abort',abort,{once:true})
-    loadModel(url).then(resolve,reject).finally(()=>signal?.removeEventListener('abort',abort))
-  })
+  const scene = await awaitModel(loadModel(url),{signal})
   signal?.throwIfAborted()
   const size = new THREE.Box3().setFromObject(scene).getSize(new THREE.Vector3())
   const scale = (asset.size || 2.4) / Math.max(size.x,size.y,size.z,1e-6)

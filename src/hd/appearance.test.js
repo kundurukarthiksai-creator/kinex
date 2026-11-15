@@ -9,3 +9,18 @@ describe('portable material edits',()=>{
   expect(material.color.getHexString()).toBe('e5484d');expect(material.metalness).toBe(.9);expect(material.roughness).toBe(.22)
  })
 })
+
+describe('visible material commands on detailed meshes',()=>{
+ it('makes an actual mesh glow rather than only changing its invisible proxy',()=>{
+  const material=new MeshStandardMaterial({color:'#E5484D'})
+  applyAppearance(material,{material:'glow'})
+  expect(material.emissiveIntensity).toBeGreaterThan(1)
+  expect(material.emissive.getHexString()).toBe('e5484d')
+ })
+ it('applies a transparent glass approximation',()=>{
+  const material=new MeshStandardMaterial()
+  applyAppearance(material,{material:'glass'})
+  expect(material.transparent).toBe(true)
+  expect(material.opacity).toBeLessThan(.6)
+ })
+})

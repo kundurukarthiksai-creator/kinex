@@ -10,6 +10,7 @@ export function CommandBar() {
   const [text, setText] = useState('')
   const [capture, setCapture] = useState(false)
   const input = useRef()
+  const storageError=useKinex(s=>s.saveState==='error')
   const voiceState = useKinex(s=>s.voiceState)
   const voiceError = useKinex(s=>s.voiceError)
   const aiState = useKinex(s=>s.aiState)
@@ -25,7 +26,7 @@ export function CommandBar() {
     runCommand(value.trim())
     setText('')
   }
-  const stateLabel = voiceState==='starting'?'Starting microphone…':listening?'Listening…':thinking?'Building your model…':!hasLLM||aiState==='offline'?'Local mode':lastOperation?`${lastOperation.kind==='ai'?'AI':lastOperation.kind==='library'?'Model library':lastOperation.kind==='fallback'?'Offline builder':'Local edit'} · ${(lastOperation.ms/1000).toFixed(1)}s`:'Type a description or use your voice'
+  const stateLabel = voiceState==='starting'?'Starting microphone…':listening?'Listening…':thinking?'Building your model…':storageError?'Session only · Export to keep your work':!hasLLM||aiState==='offline'?'Local mode':lastOperation?`${lastOperation.kind==='ai'?'AI':lastOperation.kind==='library'?'Model library':lastOperation.kind==='fallback'?'Offline builder':'Local edit'} · ${(lastOperation.ms/1000).toFixed(1)}s`:'Type a description or use your voice'
   return <div className={`command-dock ${listening?'is-listening':''} ${thinking?'is-building':''}`}>
     <form className="command-form" onSubmit={e=>{e.preventDefault();send(text)}}>
       <Icon name="spark" size={19} className="prompt-spark"/>

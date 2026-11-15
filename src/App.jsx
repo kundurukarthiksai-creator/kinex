@@ -29,6 +29,7 @@ export default function App() {
   const inspecting = useKinex((s) => Boolean(s.inspectId))
   const objects = useKinex((s) => s.objects)
   const saveState = useKinex((s) => s.saveState)
+  const viewReady = useKinex(s=>s.viewReady)
   const ready = useKinex((s) => s.workspaceReady)
   const status = useKinex((s) => s.status)
   const hands = useKinex((s) => s.handsSeen)
@@ -114,7 +115,7 @@ export default function App() {
     <header className="studio-header">
       <div className="brand"><span className="brand-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="m7 5 9 7-9 7V5Zm11 8 9 7-9 7V13Z" fill="currentColor"/></svg></span><h1>kinex</h1></div>
       <div className="project-heading"><label className="sr-only" htmlFor="project-name">World name</label><input id="project-name" value={projectName} maxLength="60" onChange={e=>useKinex.getState().set({projectName:e.target.value})} onBlur={()=>{if(!projectName.trim())useKinex.getState().set({projectName:'Untitled world'})}}/><span className="save-indicator" title={saveState==='error'?'Browser storage unavailable. Export to keep your work.':'Saved on this device'}><Icon name={saveState==='saved'?'check':saveState==='error'?'help':'clock'} size={12}/>{saveState==='saved'?'Saved':saveState==='error'?'Session only':'Saving'}</span></div>
-      <div className="header-actions"><button data-hand className="button button-secondary model-picker-button" aria-label="Choose a model" onClick={()=>openPanel('models')}><Icon name="plus" size={16}/><span>Models</span></button><button data-hand className="button button-primary export-button" aria-label="Export world" onClick={exportNow} disabled={!objects.length||thinking}><Icon name="download" size={15}/><span>Export</span></button><button data-hand data-dialog-return className="icon-button workspace-menu-trigger" aria-label="More options" aria-haspopup="dialog" onClick={()=>openPanel('menu')}><Icon name="more" size={21} strokeWidth={3}/></button></div>
+      <div className="header-actions"><button data-hand className="button button-secondary model-picker-button" aria-label="Choose a model" onClick={()=>openPanel('models')}><Icon name="plus" size={16}/><span>Models</span></button><button data-hand className="button button-primary export-button" aria-label="Export world" onClick={exportNow} disabled={!objects.length||thinking||!viewReady}><Icon name="download" size={15}/><span>Export</span></button><button data-hand data-dialog-return className="icon-button workspace-menu-trigger" aria-label="More options" aria-haspopup="dialog" onClick={()=>openPanel('menu')}><Icon name="more" size={21} strokeWidth={3}/></button></div>
       <input ref={file} type="file" multiple accept={IMPORT_EXTENSIONS.map(ext=>`.${ext}`).join(',')} className="sr-only" tabIndex="-1" aria-label="Import 3D models" onChange={event=>{const files=[...event.target.files];event.target.value='';files.reduce((promise,item)=>promise.then(()=>importModelFile(item)),Promise.resolve())}}/>
     </header>
     <div className="workspace-content">
@@ -130,7 +131,7 @@ export default function App() {
           <CameraPiP onGuide={()=>setGuide(true)}/>
           {objects.length>0&&<div className="canvas-bottom-tools"><InteractionTools/>{!inspecting&&<button data-hand className="inspect-selection" disabled={thinking} onClick={enterInspection}><Icon name="inspect" size={15}/>Inspect</button>}</div>}
           <HDTray/>
-          {!ready&&<div className="workspace-loading"><span className="loading-spinner"/><p>Opening your world…</p></div>}
+          {(!ready||!viewReady)&&<div className="workspace-loading"><span className="loading-spinner"/><p>Opening your world…</p></div>}
           {ready&&!objects.length&&<div className="empty-world"><span className="empty-world-icon"><Icon name="spark" size={28}/></span><p>What would you like to explore?</p><span>Describe a model below, or choose one to begin.</span><button data-hand className="button button-primary" onClick={()=>openPanel('models')}>Choose a model<Icon name="arrow" size={15}/></button></div>}
           <section className="command-area" aria-label="Create with AI"><Subtitle/><CommandBar/></section>
           <div className="canvas-history"><HistoryControls/><button data-hand className="toolbar-icon" title="Help and gestures" aria-label="Open quick guide" onClick={()=>setGuide(true)}><Icon name="help" size={16}/></button></div>
@@ -142,7 +143,7 @@ export default function App() {
         <button data-hand onClick={()=>setPanel('objects')}><Icon name="layers"/><span>Objects<small>Select, resize or delete</small></span><Icon name="arrow" size={14}/></button>
         <button data-hand onClick={()=>setPanel('settings')}><Icon name="sun"/><span>Lighting & view<small>Environment and display settings</small></span><Icon name="arrow" size={14}/></button>
         <button data-hand onClick={()=>setPanel('demo')}><Icon name="play"/><span>Guided demo<small>A 90-second marine design lesson</small></span><Icon name="arrow" size={14}/></button>
-        <button data-hand disabled={!objects.length||thinking} onClick={()=>{setPanel(null);exportNow()}}><Icon name="download"/><span>Export world</span></button>
+        <button data-hand disabled={!objects.length||thinking||!viewReady} onClick={()=>{setPanel(null);exportNow()}}><Icon name="download"/><span>Export world</span></button>
         <button data-hand disabled={thinking} onClick={()=>{setPanel(null);file.current.click()}}><Icon name="upload"/><span>Import a 3D file</span></button>
         <button data-hand disabled={thinking} onClick={()=>{setPanel(null);requestNew()}}><Icon name="plus"/><span>New world</span></button>
         <button data-hand onClick={()=>{setPanel(null);setGuide(true)}}><Icon name="help"/><span>Help & gestures</span></button>

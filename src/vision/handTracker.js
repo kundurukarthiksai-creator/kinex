@@ -40,6 +40,7 @@ let fpsAt = 0
 let worker = null
 let pendingWorker = null
 let workerBusy = false
+let inferenceTimer = 0
 let lastInferenceAt = 0
 let frameErrors = 0
 const FRAME_MS = 1000 / 24
@@ -101,6 +102,7 @@ async function boot(video) {
       audio: false,
     })
     if (ticket !== generation) { stream.getTracks().forEach((track) => track.stop()); return }
+    for(const track of stream.getVideoTracks())track.onended=()=>{if(ticket!==generation)return;stopTracker();st.set({camera:'error',cameraError:'The camera disconnected. Reconnect it and try again.'})}
     video.srcObject = stream
     video.muted = true
     video.playsInline = true
@@ -137,6 +139,7 @@ export function stopTracker() {
   worker?.terminate()
   worker = null
   workerBusy = false
+  clearTimeout(inferenceTimer)
   cancelAnimationFrame(loopFrame)
   tracker.video?.srcObject?.getTracks().forEach((track) => track.stop())
   if (tracker.video) { tracker.video.pause(); tracker.video.srcObject = null }
@@ -168,8 +171,9 @@ function completedFrame(landmarks) {
 
 async function createInferenceWorker(ticket) {
   if (!window.Worker || !window.createImageBitmap) return false
-  const candidate = new Worker(`${BASE}mediapipe/hand-worker.js`)
+  let candidate
   try {
+    candidate = new Worker(`${BASE}mediapipe/hand-worker.js`)
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Worker setup timed out')), 12000)
       pendingWorker={candidate,cancel:()=>{clearTimeout(timeout);candidate.terminate();reject(new Error('Camera canceled'))}}
@@ -184,6 +188,7 @@ async function createInferenceWorker(ticket) {
     if(ticket!==generation){candidate.terminate();return false}
     worker = candidate
     candidate.onmessage = ({ data }) => {
+      clearTimeout(inferenceTimer)
       workerBusy = false
       if (data.type === 'result') { frameErrors = 0; completedFrame(data.landmarks) }
       if (data.type === 'frame-error' && ++frameErrors >= 3) fallbackToMain()
@@ -192,7 +197,7 @@ async function createInferenceWorker(ticket) {
     useKinex.getState().set({ trackingMode: 'worker' })
     return true
   } catch (error) {
-    candidate.terminate()
+    candidate?.terminate()
     if(pendingWorker?.candidate===candidate)pendingWorker=null
     if(ticket!==generation)return false
     console.info('[kinex] using compatible hand-tracking fallback:', error.message)
@@ -202,6 +207,7 @@ async function createInferenceWorker(ticket) {
 
 async function fallbackToMain() {
   const ticket=generation
+  clearTimeout(inferenceTimer)
   worker?.terminate()
   worker = null
   workerBusy = false
@@ -218,6 +224,11 @@ function loop() {
   loopFrame = requestAnimationFrame(loop)
   const video = tracker.video
   const now = performance.now()
+  const stale=tracker.hands.some(hand=>hand.present&&now-hand.seenAt>500)
+  if(stale){
+    for(const hand of tracker.hands)if(hand.present&&now-hand.seenAt>500){hand.present=false;hand.mode='idle';hand.hold=0;hand.gesture={...hand.gesture,label:'none',pinch:false,fist:false,victory:false,open:false}}
+    const state=useKinex.getState();state.set({handsSeen:tracker.hands.filter(hand=>hand.present).length,gestures:tracker.hands.map(hand=>hand.present?hand.gesture.label:'none')})
+  }
   if (!video || video.readyState < 2 || video.currentTime === lastVideoTime || now - lastInferenceAt < FRAME_MS || workerBusy) return
   if (!worker && !tracker.landmarker) return
   lastVideoTime = video.currentTime
@@ -225,12 +236,14 @@ function loop() {
   if (worker) {
     workerBusy = true
     const currentWorker = worker
+    clearTimeout(inferenceTimer)
+    inferenceTimer=setTimeout(()=>{if(tracker.running&&worker===currentWorker)fallbackToMain()},3000)
     const width = Math.min(640, video.videoWidth)
     const height = Math.round(video.videoHeight * width / Math.max(1, video.videoWidth))
     createImageBitmap(video, { resizeWidth: width, resizeHeight: height }).then((frame) => {
       if (!tracker.running || worker !== currentWorker) { frame.close(); workerBusy = false; return }
       currentWorker.postMessage({ type: 'frame', frame, timestamp: now }, [frame])
-    }).catch(() => { if(worker===currentWorker){workerBusy=false;if(++frameErrors>=3)fallbackToMain()} })
+    }).catch(() => { if(worker===currentWorker){clearTimeout(inferenceTimer);workerBusy=false;if(++frameErrors>=3)fallbackToMain()} })
   } else {
     try { completedFrame(tracker.landmarker.detectForVideo(video, now).landmarks) }
     catch (error) { console.warn('[kinex] skipped a tracking frame:', error.message) }
