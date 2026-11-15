@@ -25,7 +25,8 @@ export async function textToImage(subject) {
     await fetch(`${BASE}/images/generations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'flux-2', prompt, size: '1024x1024', n: 1, response_format: 'b64_json' }),
+      // 512px: ~30 s instead of ~70 s, and trellis only needs a clean silhouette.
+      body: JSON.stringify({ model: 'flux-2', prompt, size: '512x512', n: 1, response_format: 'b64_json' }),
     }),
   )
   const b64 = data.data?.[0]?.b64_json
@@ -33,8 +34,9 @@ export async function textToImage(subject) {
   return `data:image/png;base64,${b64}`
 }
 
-// 200k faces + 2K textures: sharp up close in Inspect, ~3x lighter than the default.
-const LIGHT = { faces: 200000, texture_size: 2048 }
+// Benchmarked on ASU: 512 geometry resolution is the fastest setting that still looks
+// good; 150k faces + 2K textures stay sharp up close in Inspect.
+const LIGHT = { resolution: '512', faces: 150000, texture_size: 2048 }
 
 // Picture -> textured 3D model job (trellis-2).
 export async function startMesh(image, options = LIGHT) {

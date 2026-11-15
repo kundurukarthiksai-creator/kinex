@@ -3,11 +3,6 @@ import { useKinex } from '../store.js'
 import { importModelFile, IMPORT_EXTENSIONS } from '../hd/importModel.js'
 import { exportNow } from '../ai/commands.js'
 
-const GRAVITY = [
-  ['normal', 'Earth'],
-  ['low', 'Moon'],
-  ['zero', 'Off'],
-]
 const LIGHT = [
   ['studio', 'Studio'],
   ['sunset', 'Sunset'],
@@ -64,7 +59,6 @@ export function TopBar() {
     <header className="relative z-40 flex h-14 shrink-0 items-center gap-3 border-b border-line bg-[#EEF0F5] px-4">
       <p className="mr-2 text-[22px] font-bold leading-none tracking-[-0.03em] text-ink">Kinex</p>
       <div className="hidden items-center gap-2 lg:flex">
-        <Segmented label="Gravity" options={GRAVITY} value={env.gravity} onPick={(gravity) => set({ environment: { ...env, gravity } })} />
         <Segmented label="Light" options={LIGHT} value={env.preset} onPick={(preset) => set({ environment: { ...env, preset } })} />
       </div>
       <button

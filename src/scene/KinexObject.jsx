@@ -124,8 +124,8 @@ function KinexObject({ obj }) {
       type="kinematicPosition"
       position={[obj.position[0], obj.position[1] + 0.02, obj.position[2]]}
       rotation={[0, obj.rotationY || 0, 0]}
-      linearDamping={0.15}
-      angularDamping={0.5}
+      linearDamping={1.1}
+      angularDamping={1.4}
       ccd
       enabledRotations={UPRIGHT}
     >

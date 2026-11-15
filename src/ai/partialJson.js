@@ -21,7 +21,14 @@ export function parsePartial(text) {
     if (inStr) {
       if (esc) esc = false
       else if (c === '\\') esc = true
-      else if (c === '"') inStr = false
+      else if (c === '"') {
+        inStr = false
+        // A finished string inside an array is a complete element (one-line parts).
+        if (stack.at(-1) === '[') {
+          cut = i + 1
+          cutStack = stack.slice()
+        }
+      }
       continue
     }
     if (c === '"') inStr = true

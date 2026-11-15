@@ -105,3 +105,16 @@ describe('colors from the model', () => {
     expect(c('not a color')).toBe('#8890a6')
   })
 })
+
+describe('isNewThing', () => {
+  it('tells new models from edits to the focus model', async () => {
+    const { isNewThing } = await import('./commands.js')
+    expect(isNewThing('a castle with a red flag', 'vintage camera')).toBe(true)
+    expect(isNewThing('build me a robot with glowing eyes', 'castle')).toBe(true)
+    expect(isNewThing('make it taller', 'castle')).toBe(false)
+    expect(isNewThing('add a drawbridge', 'castle')).toBe(false)
+    expect(isNewThing('paint the roof blue', 'castle')).toBe(false)
+    expect(isNewThing('make the castle a bit bigger', 'castle')).toBe(false)
+    expect(isNewThing('a red flag on top of it', 'castle')).toBe(false)
+  })
+})

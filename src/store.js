@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { toPartLine } from './ai/partLine.js'
 
 let seq = 0
 export const newId = (name = 'thing') =>
@@ -12,7 +13,7 @@ export const groups = new Map()
 export const useKinex = create((set, get) => ({
   objects: [],
   bursts: [],
-  environment: { preset: 'studio', gravity: 'normal' },
+  environment: { preset: 'studio' },
   hoverId: null,
   heldIds: [],
   status: { kind: 'idle', text: '' }, // idle | thinking | listening | error | done
@@ -100,9 +101,6 @@ export function describeScene() {
   }
 }
 
-const r2 = (n) => Math.round(n * 100) / 100
-const deg = (r) => Math.round((r * 180) / Math.PI)
-
 // The model being worked on, part by part with indices, so the AI can edit it.
 export function describeFocus() {
   const { objects, inspectId, heldIds, hoverId, lastId } = useKinex.getState()
@@ -112,6 +110,6 @@ export function describeFocus() {
   return {
     id: o.id,
     name: o.name,
-    parts: o.parts.map((p, i) => [i, p.shape, p.size.map(r2), p.position.map(r2), p.rotation.map(deg), p.color, p.material]),
+    lines: o.parts.map((p, i) => `${i}: ${toPartLine(p)}`),
   }
 }

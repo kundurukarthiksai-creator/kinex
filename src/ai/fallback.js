@@ -64,9 +64,6 @@ export function offlinePlan(text) {
 
   if (/\b(clear|reset|delete everything|remove everything)\b/.test(t)) return { narration: 'Clean slate.', actions: [{ type: 'clear' }] }
   if (/\b(delete|remove|destroy)\b/.test(t)) return { narration: 'Gone.', actions: [{ type: 'delete' }] }
-  if (/zero.?g|no gravity|space|float away/.test(t)) return { narration: 'Gravity off. Everything drifts.', actions: [{ type: 'environment', gravity: 'zero' }] }
-  if (/moon|low gravity/.test(t)) return { narration: 'Moon gravity.', actions: [{ type: 'environment', gravity: 'low' }] }
-  if (/gravity/.test(t)) return { narration: 'Gravity is back.', actions: [{ type: 'environment', gravity: 'normal' }] }
   for (const preset of ['night', 'sunset', 'dawn', 'studio']) {
     if (t.includes(preset)) return { narration: `Switched to ${preset}.`, actions: [{ type: 'environment', preset }] }
   }

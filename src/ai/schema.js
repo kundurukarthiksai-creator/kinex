@@ -3,22 +3,11 @@ export const MATERIALS = ['matte', 'plastic', 'metal', 'glass', 'glow', 'wood']
 export const PHYSICS = ['dynamic', 'static', 'float']
 export const BEHAVIORS = ['none', 'spin', 'float', 'orbit', 'pulse', 'bounce']
 export const PRESETS = ['studio', 'sunset', 'night', 'dawn']
-export const GRAVITY = ['normal', 'low', 'zero']
 
 const vec3 = { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 }
 
-const part = {
-  type: 'object',
-  properties: {
-    shape: { type: 'string', enum: SHAPES },
-    size: { ...vec3, description: 'bounding box [width, height, depth] in meters' },
-    position: { ...vec3, description: 'center of this part, relative to the object base (y=0 is the ground under it)' },
-    rotation: { ...vec3, description: 'euler rotation in degrees' },
-    color: { type: 'string', description: 'hex like #E4572E' },
-    material: { type: 'string', enum: MATERIALS },
-  },
-  required: ['shape', 'size', 'position', 'color', 'material'],
-}
+// One part per line: "shape w h d x y z rx ry rz #RRGGBB material" (see partLine.js).
+const part = { type: 'string', description: 'shape w h d x y z rx ry rz #RRGGBB material' }
 
 const behavior = {
   type: 'object',
@@ -56,26 +45,6 @@ const modify = {
     rotateY: { type: 'number', description: 'turn by degrees around the vertical axis' },
     physics: { type: 'string', enum: PHYSICS },
     behavior,
-    parts: { type: 'array', items: part, description: 'replace ALL parts; only for a total redesign' },
-    addParts: { type: 'array', items: part, description: 'new parts to add to the object, in its local frame' },
-    editParts: {
-      type: 'array',
-      description: 'change existing parts by index',
-      items: {
-        type: 'object',
-        properties: {
-          index: { type: 'integer' },
-          color: { type: 'string' },
-          material: { type: 'string', enum: MATERIALS },
-          position: vec3,
-          rotation: vec3,
-          shape: { type: 'string', enum: SHAPES },
-          size: vec3,
-        },
-        required: ['index'],
-      },
-    },
-    removeParts: { type: 'array', items: { type: 'integer' }, description: 'indices of parts to delete' },
   },
   required: ['targetId'],
 }
@@ -90,7 +59,7 @@ export const RESPONSE_SCHEMA = {
     clear: { type: 'boolean', description: 'true to delete everything' },
     environment: {
       type: 'object',
-      properties: { preset: { type: 'string', enum: PRESETS }, gravity: { type: 'string', enum: GRAVITY } },
+      properties: { preset: { type: 'string', enum: PRESETS } },
     },
   },
   required: ['narration'],
@@ -120,7 +89,7 @@ export function toActions(plan, focusId) {
   if (!edit) for (const id of plan?.remove || []) actions.push({ type: 'delete', targetId: id })
   for (const m of plan?.modify || []) actions.push({ ...m, type: 'modify' })
   for (const s of plan?.spawn || []) actions.push({ ...s, position: s.at ?? s.position, type: 'spawn' })
-  if (plan?.environment && (plan.environment.preset || plan.environment.gravity)) actions.push({ ...plan.environment, type: 'environment' })
+  if (plan?.environment?.preset) actions.push({ ...plan.environment, type: 'environment' })
   return actions
 }
 
@@ -133,20 +102,8 @@ export const EDIT_SCHEMA = {
     add: { type: 'array', items: part, description: 'new parts for the focus model, in its frame' },
     change: {
       type: 'array',
-      description: 'existing parts to change, by index; only the fields that change',
-      items: {
-        type: 'object',
-        properties: {
-          index: { type: 'integer' },
-          color: { type: 'string' },
-          material: { type: 'string', enum: MATERIALS },
-          position: vec3,
-          rotation: vec3,
-          shape: { type: 'string', enum: SHAPES },
-          size: vec3,
-        },
-        required: ['index'],
-      },
+      description: 'index then the complete new part line, e.g. "3 cone 1 1.2 1 -1.4 3.8 0 0 0 0 #2F5C9E matte"',
+      items: { type: 'string' },
     },
     narration: { type: 'string', description: 'one short warm sentence saying what changed' },
     paint: {

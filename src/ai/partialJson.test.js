@@ -31,3 +31,10 @@ describe('parsePartial', () => {
     expect(parsePartial('{"narration":"hel')).toBeNull()
   })
 })
+
+describe('parsePartial with one-line parts', () => {
+  it('returns each finished string as soon as it closes', () => {
+    const t = '{"name":"tower","parts":["cylinder 1 2 1 0 1 0 0 0 0 #C9C3B8 matte","cone 1.2 1 1.2 0 2.5 0 0 0 0 #5B6C'
+    expect(parsePartial(t)).toEqual({ name: 'tower', parts: ['cylinder 1 2 1 0 1 0 0 0 0 #C9C3B8 matte'] })
+  })
+})

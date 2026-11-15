@@ -39,9 +39,19 @@ function notesFor(plan, focusId) {
     }
     if (a.type === 'delete') notes.push('Removed a model')
     if (a.type === 'clear') notes.push('Cleared the scene')
-    if (a.type === 'environment') notes.push([a.gravity && `Gravity: ${a.gravity}`, a.preset && `Light: ${a.preset}`].filter(Boolean).join(', '))
+    if (a.type === 'environment' && a.preset) notes.push(`Light: ${a.preset}`)
   }
   return notes
+}
+
+// "a castle with a red flag" or "build me a robot" asks for a NEW model; "make it
+// taller" / "add a door" / "paint the roof blue" edit the one in focus.
+export function isNewThing(text, focusName = '') {
+  const t = text.toLowerCase().trim()
+  const name = focusName.toLowerCase()
+  if (/\b(it|its|it's|this|that|them|those)\b/.test(t)) return false
+  if (name && t.includes(name)) return false
+  return /^(please\s+)?((build|make|create|generate|design|model|draw|spawn|show|give)( me)?|i want|i'd like|let's (build|make))?\s*(a|an|one|two|three|some)\s+\w/.test(t)
 }
 
 // Earlier turns for the AI, so follow-ups like "make it bigger" have context.
@@ -53,10 +63,35 @@ function history() {
     .map((m) => ({ role: m.role, content: m.text }))
 }
 
-function finish(plan, note, live, source, replyId, edits, focusId) {
+// "A castle with a red flag" should be one castle. When one request streams in a main
+// model plus small add-ons (4 parts or fewer), fold the add-ons into the main model,
+// placed where the AI put them relative to it.
+function mergeAccessories(plan, live) {
+  const st = useKinex.getState()
+  const spawns = Array.isArray(plan?.spawn) ? plan.spawn : []
+  const items = [...live.entries()]
+    .map(([i, e]) => ({ at: Array.isArray(spawns[i]?.at) ? spawns[i].at.map(Number) : [0, 0, 0], obj: st.objects.find((o) => o.id === e.id) }))
+    .filter((x) => x.obj)
+  if (items.length < 2) return
+  const main = items.reduce((a, b) => (b.obj.parts.length > a.obj.parts.length ? b : a))
+  const extras = items.filter((x) => x !== main && x.obj.parts.length <= 4)
+  if (!extras.length || main.obj.parts.length < 10) return
+  let parts = main.obj.parts
+  for (const x of extras) {
+    const off = [0, 1, 2].map((i) => (x.at[i] || 0) - (main.at[i] || 0))
+    parts = [...parts, ...x.obj.parts.map((p) => ({ ...p, position: p.position.map((v, i) => v + off[i]) }))]
+    st.removeObject(x.obj.id, false)
+  }
+  st.updateObject(main.obj.id, { parts })
+  st.set({ lastId: main.obj.id })
+}
+
+function finish(plan, note, live, source, replyId, edits, focusId, startedAt) {
   const st = useKinex.getState()
   const notes = notesFor(plan, focusId) // before applying, while indices still match
+  if (startedAt && notes.length) notes.push(`Done in ${((performance.now() - startedAt) / 1000).toFixed(1)} s`)
   applyActions(plan, live, edits, focusId)
+  if (live) mergeAccessories(plan, live)
   if (source) {
     tagNew(source)
     setTimeout(() => tagNew(source), 4000) // multi-object spawns land staggered
@@ -108,12 +143,17 @@ export async function runCommand(raw) {
   st.setStatus('thinking', 'Building')
   st.set({ narration: '' })
   const replyId = st.say('assistant', 'Thinking…', { status: 'working' })
+  const startedAt = performance.now()
   const live = new Map()
   const edits = new Map()
   const show = progress(replyId)
   try {
     if (!hasLLM) throw new Error('no key')
-    const focus = describeFocus()
+    // Naming a model ("make the castle taller") makes it the one being worked on.
+    const named = [...st.objects].sort((a, b) => b.name.length - a.name.length).find((o) => text.toLowerCase().includes(o.name.toLowerCase()))
+    if (named && !st.inspectId) st.set({ lastId: named.id })
+    const current = describeFocus()
+    const focus = current && !isNewThing(text, current.name) ? current : null
     const plan = await planFromText(
       text,
       describeScene(),
@@ -125,7 +165,7 @@ export async function runCommand(raw) {
       },
       { focus, history: earlier },
     )
-    finish(plan, '', live, { text }, replyId, edits, focus?.id)
+    finish(plan, '', live, { text }, replyId, edits, focus?.id, startedAt)
   } catch (err) {
     console.warn('[kinex] model failed, using offline builder:', err)
     const why = hasLLM ? "The AI didn't answer, so the offline builder took over." : 'No OPENAI_API_KEY in .env, so the offline builder took over.'

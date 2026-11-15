@@ -9,8 +9,19 @@ const DIRECT_KEY = IN_BROWSER ? null : globalThis.process?.env?.OPENAI_API_KEY
 const READY = IN_BROWSER ? __LLM_READY__ : Boolean(DIRECT_KEY)
 const BASE = IN_BROWSER ? __LLM_BASE__ : 'https://openai.rc.asu.edu/v1'
 const ENV_MODEL = typeof __LLM_MODEL__ === 'undefined' ? '' : __LLM_MODEL__
-// deepseek-v4-1-flash with reasoning off starts writing in ~1s; qwen38-27b is the backup.
-const MODELS = [...new Set([ENV_MODEL, 'deepseek-v4-1-flash', 'qwen38-27b'].filter(Boolean))]
+// Fastest good builders first (see README: model benchmark). The rest are backups.
+let MODELS = [...new Set([ENV_MODEL, 'gpt-oss-120b', 'llama4-maverick-17b', 'deepseek-v4-1-flash'].filter(Boolean))]
+export function setModels(list) {
+  MODELS = list
+  working = null
+}
+
+// How each model family is told to skip long hidden reasoning before answering.
+function fastMode(model) {
+  if (model.startsWith('gpt-oss')) return { reasoning_effort: 'low' }
+  if (model.startsWith('llama') || model.startsWith('gemma')) return {}
+  return { chat_template_kwargs: { enable_thinking: false, thinking: false } }
+}
 const IDLE_MS = 20000 // give up if the stream goes quiet this long
 const TOTAL_MS = 120000
 
@@ -36,7 +47,7 @@ function body(model, messages, rung, maxTokens, schema = RESPONSE_SCHEMA) {
     stream: true,
     temperature: 0.7,
     max_tokens: maxTokens,
-    ...(rung.noThink ? { chat_template_kwargs: { enable_thinking: false, thinking: false } } : {}),
+    ...(rung.noThink ? fastMode(model) : {}),
     ...(rung.format === 'json_schema'
       ? { response_format: { type: 'json_schema', json_schema: { name: 'kinex_plan', schema } } }
       : rung.format === 'json_object'

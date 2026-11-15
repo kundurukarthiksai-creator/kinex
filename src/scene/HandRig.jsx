@@ -301,7 +301,7 @@ export function HandRig() {
         p.target.copy(ray.origin).addScaledVector(ray.direction, d).add(p.offset)
         p.target.set(
           THREE.MathUtils.clamp(p.target.x, -10, 10),
-          THREE.MathUtils.clamp(p.target.y, 0, 7.5),
+          THREE.MathUtils.clamp(p.target.y, -4.5, 7.5),
           THREE.MathUtils.clamp(p.target.z, -8, 5.8),
         )
         p.hist.push({ t: now, p: p.target.clone() })

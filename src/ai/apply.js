@@ -1,10 +1,11 @@
 import * as THREE from 'three'
-import { SHAPES, MATERIALS, PHYSICS, BEHAVIORS, PRESETS, GRAVITY, toActions, focusEdit } from './schema.js'
+import { SHAPES, MATERIALS, PHYSICS, BEHAVIORS, PRESETS, toActions, focusEdit } from './schema.js'
 import { useKinex, bodies, newId, dominantColor } from '../store.js'
 import { ASSEMBLY_STAGGER } from '../scene/interaction.js'
+import { parsePartLine, parseIndexedLine } from './partLine.js'
 
 const DEG = Math.PI / 180
-const MAX_PARTS = 24
+const MAX_PARTS = 60 // detailed one-line models; Add detail can take it to 96
 export const MAX_DETAILED_PARTS = 96
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d)
@@ -25,11 +26,12 @@ function color(c, d = '#8890A6') {
 }
 
 export function sanitizePart(p = {}) {
-  const size = vec(p.size, [0.5, 0.5, 0.5]).map((n) => clamp(Math.abs(n), 0.03, 8))
+  if (typeof p === 'string') p = parsePartLine(p) || {}
+  const size = vec(p.size, [0.5, 0.5, 0.5]).map((n) => clamp(Math.abs(n), 0.01, 40))
   return {
     shape: pick(p.shape, SHAPES, 'box'),
     size,
-    position: vec(p.position, [0, size[1] / 2, 0]).map((n) => clamp(n, -8, 12)),
+    position: vec(p.position, [0, size[1] / 2, 0]).map((n) => clamp(n, -40, 40)),
     rotation: vec(p.rotation, [0, 0, 0]).map((n) => clamp(n, -720, 720) * DEG),
     color: color(p.color),
     material: pick(p.material, MATERIALS, 'plastic'),
@@ -92,17 +94,36 @@ export function resolveTarget(ref, objects, focusFallback = true) {
   return objects.find((o) => o.id === focus) || objects.at(-1) || null
 }
 
+// Models that come back far too big or tiny get scaled to a size that reads on screen.
+export function normalizeSize(parts, { max = 6, min = 0.8, target = 3, small = 1.8 } = {}) {
+  if (!parts.length) return parts
+  const lo = [Infinity, Infinity, Infinity]
+  const hi = [-Infinity, -Infinity, -Infinity]
+  for (const p of parts)
+    for (let i = 0; i < 3; i++) {
+      lo[i] = Math.min(lo[i], p.position[i] - p.size[i] / 2)
+      hi[i] = Math.max(hi[i], p.position[i] + p.size[i] / 2)
+    }
+  const longest = Math.max(...hi.map((h, i) => h - lo[i]))
+  if (longest <= max && longest >= min) return parts
+  const k = (longest > max ? target : small) / longest
+  return parts.map((p) => ({ ...p, size: p.size.map((v) => Math.max(0.01, v * k)), position: p.position.map((v) => v * k) }))
+}
+
 export function buildObject(a, objects, { reseat = true } = {}) {
-  const parts = (Array.isArray(a.parts) ? a.parts : []).slice(0, MAX_PARTS).map(sanitizePart)
+  let parts = (Array.isArray(a.parts) ? a.parts : []).slice(0, MAX_PARTS).map(sanitizePart)
   if (!parts.length) parts.push(sanitizePart({ shape: 'box', size: [0.8, 0.8, 0.8], color: '#8890A6' }))
+  if (reseat) parts = normalizeSize(parts) // not mid-stream: the size would jump as parts arrive
   // Re-seat the object so its lowest part touches y=0 of its own base.
   const ext = objectExtent(parts)
   if (reseat && Math.abs(ext.minY) > 0.01) parts.forEach((p) => (p.position[1] -= ext.minY))
   const physics = pick(a.physics, PHYSICS, 'dynamic')
   const behavior = sanitizeBehavior(a.behavior)
   let position = vec(a.position, [0, 0, 0])
-  position = [clamp(position[0], -6.5, 6.5), clamp(position[1], 0, 7), clamp(position[2], -5, 3)]
-  if ((physics === 'float' || behavior.kind === 'float' || behavior.kind === 'orbit') && position[1] < 0.6) position[1] = 1.4
+  // Models float with no ground: center them around eye height unless placed on purpose.
+  const h = objectExtent(parts).height
+  if (Math.abs(position[1]) < 0.01) position[1] = 1.2 - h / 2
+  position = [clamp(position[0], -6.5, 6.5), clamp(position[1], -4, 6), clamp(position[2], -5, 3)]
   const radius = objectExtent(parts).radius
   if (!behavior.targetId) position = freeSpot(position, radius, objects)
   const name = String(a.name || 'thing').slice(0, 40)
@@ -110,7 +131,7 @@ export function buildObject(a, objects, { reseat = true } = {}) {
 }
 
 const partReady = (p) =>
-  p && typeof p.shape === 'string' && Array.isArray(p.size) && p.size.length >= 3 &&
+  typeof p === 'string' ? Boolean(parsePartLine(p)) : p && typeof p.shape === 'string' && Array.isArray(p.size) && p.size.length >= 3 &&
   Array.isArray(p.position) && p.position.length >= 3 && typeof p.color === 'string' && typeof p.material === 'string'
 
 // Called on every streamed chunk: objects appear as soon as their first part is
@@ -216,7 +237,7 @@ export function applyActions(plan, live = new Map(), edits = new Map(), focusId 
         const body = bodies.get(o.id)
         if (Array.isArray(a.position)) {
           const p = vec(a.position, o.position)
-          patch.position = [clamp(p[0], -6.5, 6.5), clamp(p[1], 0, 7), clamp(p[2], -5, 3)]
+          patch.position = [clamp(p[0], -6.5, 6.5), clamp(p[1], -4, 6), clamp(p[2], -5, 3)]
           body?.setTranslation({ x: patch.position[0], y: patch.position[1] + 0.05, z: patch.position[2] }, true)
         }
         if (Number.isFinite(Number(a.rotateY))) {
@@ -231,9 +252,7 @@ export function applyActions(plan, live = new Map(), edits = new Map(), focusId 
           }
         }
         if (patch.scale && body) {
-          // Lift a growing object so it doesn't spawn into the floor.
-          const t = body.translation()
-          body.setTranslation({ x: t.x, y: Math.max(t.y, 0.02), z: t.z }, true)
+          body.wakeUp()
         }
         st.updateObject(o.id, patch)
         break
@@ -251,7 +270,6 @@ export function applyActions(plan, live = new Map(), edits = new Map(), focusId 
         st.set({
           environment: {
             preset: pick(a.preset, PRESETS, env.preset),
-            gravity: pick(a.gravity, GRAVITY, env.gravity),
           },
         })
         break
@@ -303,7 +321,9 @@ export function editParts(parts, a, already = 0) {
   const edits = Array.isArray(a.editParts) ? a.editParts : []
   if (edits.length) {
     out = out.slice()
-    for (const e of edits) {
+    for (const raw of edits) {
+      // A one-line change replaces the whole part: "3 cone 1 0.8 1 ...".
+      const e = typeof raw === 'string' ? parseIndexedLine(raw) : raw
       const i = Number(e?.index)
       if (!Number.isInteger(i) || i < 0 || i >= original) continue
       const p = { ...out[i] }

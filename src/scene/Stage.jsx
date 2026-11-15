@@ -2,28 +2,28 @@ import { Suspense, useEffect, useRef } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { CameraControls, Environment, Lightformer } from '@react-three/drei'
 import { Physics, RigidBody, CuboidCollider } from '@react-three/rapier'
-import { EffectComposer, Bloom } from '@react-three/postprocessing'
+import { EffectComposer, Bloom, N8AO } from '@react-three/postprocessing'
 import * as THREE from 'three'
-import { useKinex, bodies } from '../store.js'
+import { useKinex } from '../store.js'
 import KinexObject from './KinexObject.jsx'
 import { Bursts } from './Burst.jsx'
 import { HandRig } from './HandRig.jsx'
 import { world } from '../lib/exportGltf.js'
-import { DYNAMIC } from './interaction.js'
 import { InspectView } from './InspectView.jsx'
 import { viewer } from '../lib/viewer.js'
 
 // The world is a photo-studio cyclorama: floor and backdrop share one color and fog
 // erases the horizon, so every object reads like a product shot.
 const PRESETS = {
-  studio: { bg: '#D8DCE6', shadow: '#3A3F5C', shadowO: 0.22, sky: '#FFFFFF', ground: '#AEB4C4', hemi: 0.55, key: '#FFFFFF', keyI: 1.6, env: 0.9 },
-  sunset: { bg: '#EBC2AA', shadow: '#5A2E3E', shadowO: 0.28, sky: '#FFE2C6', ground: '#8C6A86', hemi: 0.5, key: '#FFB37D', keyI: 1.9, env: 0.7 },
-  dawn: { bg: '#D6D0EA', shadow: '#3F3A66', shadowO: 0.22, sky: '#FBE9F3', ground: '#9EA3C8', hemi: 0.55, key: '#FFD8E6', keyI: 1.5, env: 0.8 },
-  night: { bg: '#161B33', shadow: '#000000', shadowO: 0.45, sky: '#4A5AA8', ground: '#0B0E1C', hemi: 0.3, key: '#9DB0FF', keyI: 0.6, env: 0.18 },
+  studio: { bg: '#D8DCE6', sky: '#FFFFFF', ground: '#AEB4C4', hemi: 0.55, key: '#FFFFFF', keyI: 1.6, env: 0.9 },
+  sunset: { bg: '#EBC2AA', sky: '#FFE2C6', ground: '#8C6A86', hemi: 0.5, key: '#FFB37D', keyI: 1.9, env: 0.7 },
+  dawn: { bg: '#D6D0EA', sky: '#FBE9F3', ground: '#9EA3C8', hemi: 0.55, key: '#FFD8E6', keyI: 1.5, env: 0.8 },
+  night: { bg: '#161B33', sky: '#4A5AA8', ground: '#0B0E1C', hemi: 0.3, key: '#9DB0FF', keyI: 0.6, env: 0.18 },
 }
-const GRAVITY = { normal: [0, -9.81, 0], low: [0, -1.62, 0], zero: [0, 0, 0] }
+// No ground and no gravity: models float in the studio.
+const NO_GRAVITY = [0, 0, 0]
 
-function EnvironmentRig({ floorMat, hemi, keyLight }) {
+function EnvironmentRig({ hemi, keyLight }) {
   const { scene } = useThree()
   const preset = useKinex((s) => s.environment.preset)
   const target = useRef(PRESETS.studio)
@@ -38,10 +38,6 @@ function EnvironmentRig({ floorMat, hemi, keyLight }) {
     const p = target.current
     const k = 1 - Math.exp(-dt * 3)
     scene.background.lerp(c.current.bg.set(p.bg), k)
-    if (floorMat.current) {
-      floorMat.current.color.lerp(c.current.floor.set(p.shadow), k)
-      floorMat.current.opacity += (p.shadowO - floorMat.current.opacity) * k
-    }
     if (hemi.current) {
       hemi.current.color.lerp(c.current.sky.set(p.sky), k)
       hemi.current.groundColor.lerp(c.current.ground.set(p.ground), k)
@@ -56,42 +52,15 @@ function EnvironmentRig({ floorMat, hemi, keyLight }) {
   return null
 }
 
-// Turning gravity off should look like it: give everything a gentle shove upward.
-function GravityKick() {
-  const gravity = useKinex((s) => s.environment.gravity)
-  const prev = useRef(gravity)
-  useEffect(() => {
-    if (gravity === 'zero' && prev.current !== 'zero') {
-      bodies.forEach((b) => {
-        if (b.bodyType() !== DYNAMIC) return
-        b.setEnabledRotations(true, true, true, true)
-        const m = b.mass()
-        b.setLinearDamping(0.35)
-        b.setAngularDamping(0.3)
-        b.applyImpulse({ x: (Math.random() - 0.5) * m * 0.6, y: m * (0.9 + Math.random() * 0.6), z: (Math.random() - 0.5) * m * 0.4 }, true)
-        b.applyTorqueImpulse({ x: (Math.random() - 0.5) * m * 0.5, y: (Math.random() - 0.5) * m * 0.5, z: (Math.random() - 0.5) * m * 0.5 }, true)
-      })
-    }
-    if (prev.current === 'zero' && gravity !== 'zero')
-      bodies.forEach((b) => {
-        b.setLinearDamping(0.15)
-        b.setAngularDamping(0.5)
-        b.wakeUp()
-      })
-    prev.current = gravity
-  }, [gravity])
-  return null
-}
-
 function Room() {
-  // Floor plus invisible walls and ceiling so thrown things stay in view.
+  // No visible floor. An invisible box all around keeps thrown models in view.
   return (
     <RigidBody type="fixed" colliders={false}>
-      <CuboidCollider args={[40, 0.5, 40]} position={[0, -0.5, 0]} friction={0.9} />
-      <CuboidCollider args={[0.5, 15, 40]} position={[-11, 15, 0]} />
-      <CuboidCollider args={[0.5, 15, 40]} position={[11, 15, 0]} />
-      <CuboidCollider args={[40, 15, 0.5]} position={[0, 15, -9]} />
-      <CuboidCollider args={[40, 15, 0.5]} position={[0, 15, 6.5]} />
+      <CuboidCollider args={[40, 0.5, 40]} position={[0, -5.5, 0]} />
+      <CuboidCollider args={[0.5, 15, 40]} position={[-11, 0, 0]} />
+      <CuboidCollider args={[0.5, 15, 40]} position={[11, 0, 0]} />
+      <CuboidCollider args={[40, 15, 0.5]} position={[0, 0, -9]} />
+      <CuboidCollider args={[40, 15, 0.5]} position={[0, 0, 6.5]} />
       <CuboidCollider args={[40, 0.5, 40]} position={[0, 8, 0]} />
     </RigidBody>
   )
@@ -126,9 +95,7 @@ function RegisterViewer() {
 }
 
 export default function Stage() {
-  const gravity = useKinex((s) => s.environment.gravity)
   const inspecting = useKinex((s) => Boolean(s.inspectId))
-  const floorMat = useRef()
   const hemi = useRef()
   const keyLight = useRef()
 
@@ -139,7 +106,7 @@ export default function Stage() {
       camera={{ position: [0, 4.2, 13], fov: 40, near: 0.1, far: 120 }}
       gl={{ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: false }}
     >
-      <EnvironmentRig floorMat={floorMat} hemi={hemi} keyLight={keyLight} />
+      <EnvironmentRig hemi={hemi} keyLight={keyLight} />
       <hemisphereLight ref={hemi} args={['#FFFFFF', '#AEB4C4', 0.55]} />
       <directionalLight
         ref={keyLight}
@@ -163,14 +130,8 @@ export default function Stage() {
         <Lightformer form="ring" color="#2F5BFF" intensity={0.8} position={[0, 2, -8]} scale={4} />
       </Environment>
 
-      {/* Seamless studio paper: the floor only catches shadows, so it melts into the backdrop. */}
-      <mesh rotation-x={-Math.PI / 2} receiveShadow>
-        <planeGeometry args={[200, 200]} />
-        <shadowMaterial ref={floorMat} transparent opacity={0.22} color="#3A3F5C" />
-      </mesh>
-
       <Suspense fallback={null}>
-        <Physics gravity={GRAVITY[gravity]} paused={inspecting}>
+        <Physics gravity={NO_GRAVITY} paused={inspecting}>
           <Room />
           <World />
           <HandRig />
@@ -178,7 +139,6 @@ export default function Stage() {
         <InspectView />
       </Suspense>
       <Bursts />
-      <GravityKick />
 
       <CameraControls
         makeDefault
@@ -191,6 +151,8 @@ export default function Stage() {
       />
       <RegisterViewer />
       <EffectComposer multisampling={4}>
+        {/* Soft contact shading where parts meet: block models read as solid objects. */}
+        <N8AO halfRes aoRadius={0.6} intensity={2.2} distanceFalloff={0.6} quality="medium" />
         <Bloom luminanceThreshold={1} luminanceSmoothing={0.2} intensity={0.9} mipmapBlur />
       </EffectComposer>
     </Canvas>
