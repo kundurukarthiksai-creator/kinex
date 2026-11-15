@@ -2,7 +2,7 @@
 
 Create a 3D world with words. Reach in and make it yours.
 
-A browser spatial playground for **Sunhacks 9.0**: conversational scene creation, webcam hand controls, detailed local meshes, editable primitive models, 3D-file import, and a focused studio interface. This fork develops the studio experience separately from the [original Kinex project](https://github.com/kundurukarthiksai-creator/kinex).
+A browser spatial playground for **Sunhacks 9.0**: conversational scene creation, webcam hand controls, detailed local meshes, editable primitive models, 3D-file import, and a focused studio interface. The studio implementation was developed and audited in [a separate fork](https://github.com/shivareddy8693/kinex) before being published back to Kinex.
 
 ## Run locally
 
