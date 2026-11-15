@@ -10,6 +10,7 @@ import { hasLLM } from './ai/llm.js'
 import { toggleListening } from './voice/speech.js'
 import { InspectPanel } from './ui/InspectPanel.jsx'
 import { ModelPanel } from './ui/ModelPanel.jsx'
+import { StageOverlay } from './ui/StageOverlay.jsx'
 import { AxisGizmo } from './ui/AxisGizmo.jsx'
 import { HDTray } from './ui/HDTray.jsx'
 import { importModelFile } from './hd/importModel.js'
@@ -102,6 +103,7 @@ export default function App() {
           <div className="pointer-events-none absolute left-5 top-4 z-20 max-w-[min(640px,80%)]">
             <Subtitle />
           </div>
+          <StageOverlay />
           {modelLoading && (
             <p className="panel breathe absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 rounded-2xl px-5 py-3 font-medium text-ink">
               Opening {modelLoading}…

@@ -47,7 +47,7 @@ export function HDTray() {
 
   if (!entries.length) return null
   return (
-    <aside aria-label="HD models" className="absolute bottom-4 left-4 z-30 flex w-[280px] flex-col gap-2">
+    <aside aria-label="HD models" className="absolute bottom-[148px] right-4 z-30 flex w-[280px] flex-col gap-2">
       {entries.map(([id, h]) => (
         <div key={id} className="panel flex gap-3 rounded-2xl p-2 pr-3">
           <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-white">

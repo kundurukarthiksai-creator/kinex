@@ -2,51 +2,36 @@ import { RESPONSE_SCHEMA, EDIT_SCHEMA } from './schema.js'
 import { SYSTEM_PROMPT, SUMMON_PROMPT, REFINE_PROMPT, EDIT_PROMPT, userPrompt, refinePrompt } from './prompt.js'
 import { parsePartial } from './partialJson.js'
 
-// ASU's OpenAI-compatible server, reached through the Vite proxy (see vite.config.js),
-// which adds the key from .env. Outside the browser (tests) it calls the server directly.
+// Models are free: a local one on this PC's GPU (Ollama, "local:" prefix) goes first,
+// then ASU's OpenAI-compatible server. In the browser both go through the Vite proxy
+// (vite.config.js), which keeps keys off the page. Outside the browser (tests) calls go direct.
 const IN_BROWSER = typeof window !== 'undefined' && typeof __LLM_READY__ !== 'undefined'
 const DIRECT_KEY = IN_BROWSER ? null : globalThis.process?.env?.OPENAI_API_KEY
-const READY = IN_BROWSER ? __LLM_READY__ : Boolean(DIRECT_KEY)
 const BASE = IN_BROWSER ? __LLM_BASE__ : 'https://openai.rc.asu.edu/v1'
+const LOCAL_BASE = IN_BROWSER ? '/ollama/v1' : 'http://localhost:11434/v1'
 const ENV_MODEL = typeof __LLM_MODEL__ === 'undefined' ? '' : __LLM_MODEL__
-// Fastest good builders first (see README: model benchmark). The rest are backups.
-let MODELS = [...new Set([ENV_MODEL, 'gpt-oss-120b', 'llama4-maverick-17b', 'deepseek-v4-1-flash'].filter(Boolean))]
+const LOCAL_MODEL = typeof __LOCAL_MODEL__ === 'undefined' ? globalThis.process?.env?.KINEX_LOCAL_MODEL || 'kinex-builder' : __LOCAL_MODEL__
+const LOCAL = LOCAL_MODEL && LOCAL_MODEL !== 'off' ? `local:${LOCAL_MODEL}` : null
+// kinex-builder = qwen3.5:9b with an 8K context (ollama/Modelfile); plain qwen3.5:9b if it isn't created.
+const LOCAL_BACKUP = LOCAL && LOCAL_MODEL === 'kinex-builder' ? 'local:qwen3.5:9b' : null
+const READY = Boolean(LOCAL) || (IN_BROWSER ? __LLM_READY__ : Boolean(DIRECT_KEY))
+
+// Order picked by benchmark (README): with library references, ASU gpt-oss builds in
+// ~15 s and looks best; the local GPU model is the free offline backup (~40-80 s).
+const ASU_READY = IN_BROWSER ? __LLM_READY__ : Boolean(DIRECT_KEY)
+let MODELS = [...new Set([...(ASU_READY ? [ENV_MODEL, 'gpt-oss-120b'] : []), LOCAL, LOCAL_BACKUP, ...(ASU_READY ? ['llama4-maverick-17b'] : [])].filter(Boolean))]
 export function setModels(list) {
   MODELS = list
   working = null
 }
 
-// Grok (xAI) goes first when its key is set; it is reached through the /xai proxy.
-const XAI_READY = IN_BROWSER && typeof __XAI_READY__ !== 'undefined' && __XAI_READY__
-const XAI_BASE = '/xai/v1'
-const isGrok = (m) => m.startsWith('grok')
-const baseFor = (model) => (isGrok(model) ? XAI_BASE : BASE)
-let grokPicked = false
-
-// Picks Grok's fastest chat model from the account's own model list (names change often).
-async function addGrok() {
-  if (!XAI_READY || grokPicked) return
-  grokPicked = true
-  const fixed = typeof __XAI_MODEL__ !== 'undefined' && __XAI_MODEL__
-  let pick = fixed
-  if (!pick) {
-    try {
-      const ids = ((await (await fetch(`${XAI_BASE}/models`)).json()).data || []).map((m) => m.id).filter((id) => isGrok(id) && !/image|vision|imagine|embed/.test(id))
-      const score = (id) => (/non-reasoning/.test(id) ? 4 : 0) + (/fast/.test(id) ? 2 : 0) + (/mini/.test(id) ? -1 : 0) + Number(id.match(/grok-(\d+)/)?.[1] || 0) * 0.1
-      pick = ids.sort((a, b) => score(b) - score(a))[0]
-    } catch (err) {
-      console.warn('[kinex] could not list Grok models', err)
-    }
-  }
-  if (pick) {
-    MODELS = [pick, ...MODELS.filter((m) => m !== pick)]
-    console.info('[kinex] using Grok:', pick)
-  }
-}
+const isLocal = (m) => m.startsWith('local:')
+const baseFor = (model) => (isLocal(model) ? LOCAL_BASE : BASE)
+const wireName = (model) => (isLocal(model) ? model.slice(6) : model)
 
 // How each model family is told to skip long hidden reasoning before answering.
 function fastMode(model) {
-  if (isGrok(model)) return {}
+  if (isLocal(model)) return { reasoning_effort: 'none' } // Ollama: thinking off (13 s -> 1.3 s)
   if (model.startsWith('gpt-oss')) return { reasoning_effort: 'low' }
   if (model.startsWith('llama') || model.startsWith('gemma')) return {}
   return { chat_template_kwargs: { enable_thinking: false, thinking: false } }
@@ -71,7 +56,7 @@ export class LLMError extends Error {}
 
 function body(model, messages, rung, maxTokens, schema = RESPONSE_SCHEMA) {
   return {
-    model,
+    model: wireName(model),
     messages,
     stream: true,
     temperature: 0.7,
@@ -162,12 +147,13 @@ async function streamOnce(model, messages, rung, onText, maxTokens, schema) {
 }
 
 async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTokens = 4096, history = [], schema = RESPONSE_SCHEMA } = {}) {
-  if (!READY) throw new LLMError('No OPENAI_API_KEY in .env.')
-  await addGrok()
+  if (!READY) throw new LLMError('No AI model available: start Ollama or add OPENAI_API_KEY to .env.')
   const messages = [{ role: 'system', content: system }, ...history, { role: 'user', content: userContent }]
   const order = working ? [working, ...MODELS.filter((m) => m !== working)] : MODELS
   let lastErr
+  let asuDown = false
   for (const model of order) {
+    if (asuDown && !isLocal(model)) continue
     for (let r = rungFor.get(model) ?? 0; r < LADDER.length; r++) {
       let built = false // once something is in the scene, never start over on another model
       let last = null
@@ -187,7 +173,11 @@ async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTok
         lastErr = err
         console.warn(`[kinex] ${model} (rung ${r}) failed:`, String(err.message).slice(0, 200))
         if (built) return parsePartial(err.partial) || last // keep what already appeared
-        if (err.status === 401 || err.status === 403) throw err // bad key: nothing else will work
+        // Bad key: other ASU models won't work either, but the local one still can.
+        if (err.status === 401 || err.status === 403) {
+          if (!isLocal(model)) asuDown = true
+          break
+        }
         // 400 = this request shape isn't supported: try a looser rung. Otherwise next model.
         if (err.status !== 400) break
       }
@@ -197,9 +187,10 @@ async function generate(userContent, onPartial, { system = SYSTEM_PROMPT, maxTok
 }
 
 // history: earlier turns as [{role, content}], so follow-ups like "bigger" make sense.
-export function planFromText(text, scene, onPartial, { focus = null, history = [] } = {}) {
-  // With a model in focus, the conversation edits it (EDIT_PROMPT); otherwise build from scratch.
-  return generate(userPrompt(text, scene, focus), onPartial, {
+export function planFromText(text, scene, onPartial, { focus = null, history = [], refs = [] } = {}) {
+  // With a model in focus, the conversation edits it (EDIT_PROMPT); otherwise build, guided
+  // by reference models from the library.
+  return generate(userPrompt(text, scene, focus, refs), onPartial, {
     history,
     maxTokens: 6144,
     system: focus ? EDIT_PROMPT : SYSTEM_PROMPT,
@@ -226,4 +217,9 @@ export function planDetail(obj, onPartial) {
 export async function planRemodel(text, description, history = []) {
   const { REMODEL_PROMPT, REMODEL_SCHEMA, remodelPrompt } = await import('../model/remodel.js')
   return generate(remodelPrompt(text, description), null, { system: REMODEL_PROMPT, schema: REMODEL_SCHEMA, maxTokens: 3000, history })
+}
+
+// Which model answered last ("local:qwen3.5:9b", "gpt-oss-120b"...), for the UI.
+export function activeModel() {
+  return working || MODELS[0] || null
 }

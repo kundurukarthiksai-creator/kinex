@@ -1,0 +1,5 @@
+# Kinex builder: qwen3.5:9b with room for the instructions + 3 reference models.
+# Create once:  ollama create kinex-builder -f ollama/Modelfile
+FROM qwen3.5:9b
+PARAMETER num_ctx 8192
+PARAMETER temperature 0.6

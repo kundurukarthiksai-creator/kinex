@@ -2,7 +2,6 @@ import { useRef } from 'react'
 import { useKinex } from '../store.js'
 import { importModelFile, IMPORT_EXTENSIONS } from '../hd/importModel.js'
 import { exportNow } from '../ai/commands.js'
-import { openSampleHouse } from '../model/current.js'
 
 const LIGHT = [
   ['studio', 'Studio'],
@@ -62,17 +61,6 @@ export function TopBar() {
       <div className="hidden items-center gap-2 lg:flex">
         <Segmented label="Light" options={LIGHT} value={env.preset} onPick={(preset) => set({ environment: { ...env, preset } })} />
       </div>
-      <button
-        data-hand
-        onClick={async () => {
-          const c = await openSampleHouse()
-          useKinex.getState().say('assistant', `Opened the Duplex Apartment: ${c.wall} walls, ${c.door} doors, ${c.window} windows, ${c.furniture} pieces of furniture and ${c.room} rooms. Try "remove the sofa" or "how many windows are on the ground floor?"`)
-        }}
-        className="h-9 rounded-full bg-white/70 px-3 text-sm font-medium text-ink hover:bg-white"
-        title="A real two-storey apartment building (BIM file) with walls, doors, windows, furniture and rooms"
-      >
-        Open sample house
-      </button>
       <button
         data-hand
         onClick={() => file.current.click()}

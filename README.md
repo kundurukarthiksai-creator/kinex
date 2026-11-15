@@ -18,6 +18,14 @@ Open http://localhost:5173 in **Chrome or Edge** (voice uses the Web Speech API)
 
 The AI runs on ASU's OpenAI-compatible server (`https://openai.rc.asu.edu/v1`, models `qwen38-27b` and `deepseek-v4-1-flash`). Any OpenAI-compatible server works: set `OPENAI_BASE_URL` and `OPENAI_MODEL`. The browser reaches the server through Vite's built-in proxy (`/llm`), which adds the key server-side, so run Kinex with `npm run dev` or `npm run preview`, not as static files. Without a key, Kinex falls back to an offline builder that knows a few shapes, so the demo never dies on bad Wi-Fi.
 
+## How Kinex builds (and learns)
+
+1. **Starts from proven designs.** Kinex ships with a library of 10,065 example models converted from BlendNet (Apache-2.0). Each request is matched by meaning (local `embeddinggemma` embeddings) to the closest models; a very close match appears instantly as a draft.
+2. **Shapes them to your words.** A local model on your GPU (Ollama `qwen3.5:9b`, thinking off) gets the 3 best references and writes the final model part by part, streamed live. ASU's `gpt-oss-120b` is the backup. Everything is free.
+3. **Learns from you.** 👍 *Keep this one* saves the model to the library, so similar requests start from it; 👎 lowers the references it came from.
+
+Setup for the local part: install [Ollama](https://ollama.com), then `ollama pull qwen3.5:9b` and `ollama pull embeddinggemma`. Without Ollama, Kinex uses ASU and keyword search.
+
 ## Remodel a real house by chat
 
 Press **Open sample house** (or open your own `.ifc` building file). Kinex reads the real model, with every wall, door, window, floor, roof, stair, piece of furniture and room, plus which floor each is on, which walls are exterior or load-bearing, which wall each door and window sits in, and which walls join. Then talk to it:
@@ -28,10 +36,6 @@ Press **Open sample house** (or open your own `.ifc` building file). Kinex reads
 The AI never invents geometry: it picks existing elements by their facts and Kinex applies exact, undoable operations (highlight, isolate, hide, remove, recolor, material, move, rotate, scale, duplicate). Answers are computed from the model data. Click anything in the model to see what it is; the left panel lists every item by type and floor.
 
 Sample model: the *Duplex Apartment* from the buildingSMART Community Sample Test Files, CC BY 4.0 (see `public/models/ATTRIBUTION.md`).
-
-### Optional: Grok
-
-Create a key at https://console.x.ai and add `XAI_API_KEY=...` to `.env`. Kinex then uses Grok's fastest model first (through the local proxy, so the key never reaches the browser) and falls back to ASU.
 
 ## The screen
 

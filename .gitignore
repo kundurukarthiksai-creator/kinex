@@ -7,3 +7,5 @@ public/mediapipe
 public/web-ifc
 *.log
 .DS_Store
+data/
+library/vectors.bin

@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useKinex } from '../store.js'
-import { runCommand, summon } from '../ai/commands.js'
+import { runCommand, summon, rateBuild } from '../ai/commands.js'
 import { toggleListening, hasSpeech } from '../voice/speech.js'
-import { enterInspect } from '../lib/viewer.js'
-import { makeHD } from '../hd/meshes.js'
 
-const IDEAS = ['a castle with a red flag', 'a vintage camera', 'a cozy two-story house', 'a robot with glowing eyes']
-const FOLLOW_UPS = ['make it taller', 'add more windows', 'paint the roof blue', 'add detail']
-const MODEL_IDEAS = ['remove the sofa', 'hide the roof', 'how many windows are on the ground floor?', 'show only Level 2', 'make the exterior walls brick', 'undo']
+const FOLLOW_UPS = ['make it taller', 'change the color to blue', 'add more detail', 'make it bigger']
+const MODEL_IDEAS = ['hide the roof', 'how many windows are there?', 'make the exterior walls brick', 'undo']
 
 function MicIcon() {
   return (
@@ -26,6 +23,56 @@ function SendIcon() {
   )
 }
 
+// What a build was based on, and whether to keep it in the library.
+function BuildFooter({ m }) {
+  const [open, setOpen] = useState(false)
+  const b = m.build
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      {b.refs?.length > 0 && (
+        <div className="text-sm">
+          <button className="text-muted underline decoration-line underline-offset-2 hover:text-ink" onClick={() => setOpen(!open)} aria-expanded={open}>
+            Built from {b.refs.length} similar model{b.refs.length === 1 ? '' : 's'}
+          </button>
+          {open && (
+            <ol className="mt-1 list-decimal pl-5 text-muted">
+              {b.refs.map((r, i) => (
+                <li key={i} className="leading-snug">
+                  {r}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
+      {m.rated ? (
+        <p className="text-sm text-muted">
+          {m.rated === 'up' ? 'Saved to the library. Similar requests will start from this one.' : 'Noted. The models it was based on will show up less.'}
+        </p>
+      ) : (
+        <div className="flex gap-2">
+          <button
+            data-hand
+            onClick={() => rateBuild(m.id, true)}
+            className="rounded-full border border-line bg-white px-3 py-1 text-sm font-medium text-ink hover:border-cobalt"
+            title="Save this model so future builds learn from it"
+          >
+            👍 Keep this one
+          </button>
+          <button
+            data-hand
+            onClick={() => rateBuild(m.id, false)}
+            className="rounded-full border border-line px-3 py-1 text-sm text-muted hover:bg-white hover:text-ink"
+            title="Tell Kinex this missed"
+          >
+            👎 Not quite
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Message({ m }) {
   if (m.role === 'user') {
     return (
@@ -36,13 +83,7 @@ function Message({ m }) {
   }
   return (
     <div className="max-w-[92%]">
-      <p
-        className={`text-[15px] leading-relaxed ${m.status === 'error' ? 'text-crush' : 'text-ink'} ${
-          m.status === 'working' ? 'breathe' : ''
-        }`}
-      >
-        {m.text}
-      </p>
+      <p className={`text-[15px] leading-relaxed ${m.status === 'error' ? 'text-crush' : 'text-ink'} ${m.status === 'working' ? 'breathe' : ''}`}>{m.text}</p>
       {m.notes?.length > 0 && (
         <ul className="mt-1.5 flex flex-col gap-0.5 text-sm text-muted">
           {m.notes.map((n, i) => (
@@ -53,6 +94,7 @@ function Message({ m }) {
           ))}
         </ul>
       )}
+      {m.build && m.status === 'done' && <BuildFooter m={m} />}
     </div>
   )
 }
@@ -66,8 +108,6 @@ export function ChatPanel() {
   const scanning = useKinex((s) => s.scanning)
   const working = useKinex((s) => s.status.kind === 'thinking')
   const focus = useKinex((s) => s.objects.find((o) => o.id === (s.inspectId || s.lastId)) || s.objects.at(-1))
-  const focusHD = useKinex((s) => (focus ? s.hd[focus.id]?.status : null))
-  const inspecting = useKinex((s) => Boolean(s.inspectId))
   const model = useKinex((s) => s.model)
   const set = useKinex((s) => s.set)
   const [text, setText] = useState('')
@@ -85,6 +125,8 @@ export function ChatPanel() {
     setText('')
   }
 
+  const suggestions = model ? MODEL_IDEAS : focus ? FOLLOW_UPS : []
+
   return (
     <aside aria-label="Chat" className="flex h-full w-[min(400px,100vw)] shrink-0 flex-col border-l border-line bg-[#F3F4F8]">
       <div className="flex items-start gap-3 border-b border-line px-4 py-3">
@@ -100,7 +142,7 @@ export function ChatPanel() {
                 Working on the <span className="font-medium text-ink">{focus.name}</span>, {focus.parts.length} parts
               </>
             ) : (
-              'Describe something to build'
+              'Describe something and keep shaping it'
             )}
           </p>
         </div>
@@ -109,48 +151,13 @@ export function ChatPanel() {
         </button>
       </div>
 
-      {focus && !model && (
-        <div className="flex flex-wrap gap-2 border-b border-line px-4 py-2.5">
-          {!inspecting && (
-            <button data-hand onClick={() => enterInspect(focus.id)} className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-ink hover:bg-cyc">
-              Inspect
-            </button>
-          )}
-          {(!focusHD || focusHD === 'failed') && (
-            <button
-              data-hand
-              onClick={() => makeHD(focus.id)}
-              className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-ink hover:bg-cyc"
-              title="Generate a real textured 3D model. Takes a few minutes."
-            >
-              Make it HD
-            </button>
-          )}
-          <button
-            data-hand
-            onClick={() => send('add detail')}
-            disabled={working}
-            className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-ink hover:bg-cyc disabled:opacity-40"
-          >
-            Add detail
-          </button>
-        </div>
-      )}
-
       <div ref={list} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
         {chat.length === 0 && (
           <div className="flex flex-col gap-3">
             <p className="text-[15px] leading-relaxed text-ink">
-              Tell me what to build. Then keep talking to it: ask for taller towers, more windows, a different color, or more detail, and I'll
-              change the same model.
+              Tell me what to build. I start from the closest of thousands of reference models, then shape it to your request. Keep talking to change it:
+              taller, another color, more detail.
             </p>
-            <div className="flex flex-wrap gap-2">
-              {IDEAS.map((idea) => (
-                <button key={idea} data-hand onClick={() => send(idea)} className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-ink hover:bg-cyc">
-                  {idea}
-                </button>
-              ))}
-            </div>
           </div>
         )}
         {chat.map((m) => (
@@ -159,9 +166,9 @@ export function ChatPanel() {
         {listening && <p className="text-[15px] italic text-muted">{subtitle.text || 'Listening…'}</p>}
       </div>
 
-      {(model || focus) && !working && chat.length > 0 && (
+      {suggestions.length > 0 && !working && chat.length > 0 && (
         <div className="flex flex-wrap gap-2 px-4 pb-2">
-          {(model ? MODEL_IDEAS : FOLLOW_UPS).map((f) => (
+          {suggestions.map((f) => (
             <button key={f} data-hand onClick={() => send(f)} className="rounded-full border border-line px-3 py-1 text-sm text-muted hover:bg-white hover:text-ink">
               {f}
             </button>
@@ -204,7 +211,7 @@ export function ChatPanel() {
             }
             if (e.key === 'Escape') input.current.blur()
           }}
-          placeholder={model ? 'Ask about the model, or tell me what to change' : focus ? `Change the ${focus.name}, or build something new` : 'Describe something to build'}
+          placeholder={model ? 'Ask about the model, or tell me what to change' : focus ? `Change the ${focus.name}, or describe something new` : 'Describe something to build'}
           className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-1 py-2 text-[15px] text-ink outline-none placeholder:text-muted/70"
         />
         <button
@@ -218,12 +225,7 @@ export function ChatPanel() {
         </button>
       </form>
       {handsOn && (
-        <button
-          data-hand
-          onClick={summon}
-          disabled={scanning}
-          className="mx-3 mb-3 -mt-1 rounded-xl px-3 py-2 text-left text-sm font-medium text-ink hover:bg-white disabled:opacity-40"
-        >
+        <button data-hand onClick={summon} disabled={scanning} className="mx-3 mb-3 -mt-1 rounded-xl px-3 py-2 text-left text-sm font-medium text-ink hover:bg-white disabled:opacity-40">
           {scanning ? 'Looking at your object…' : 'Summon from camera: hold an object up and build a copy'}
         </button>
       )}

@@ -58,9 +58,14 @@ Name it plainly (e.g. "coffee mug", "water bottle", "sneaker"). Size it so its l
 If no object is clearly held up, replicate the most prominent object you can see.
 Narration: say what you recognized, e.g. "That's a blue mug. Here's yours."`
 
-export function userPrompt(text, scene, focus) {
+export function userPrompt(text, scene, focus, refs = []) {
   const f = focus ? `\n\nFOCUS MODEL (id ${focus.id}, "${focus.name}"), one part per line as "index: part":\n${focus.lines.join('\n')}` : ''
-  return `CURRENT SCENE:\n${JSON.stringify(scene)}${f}\n\nREQUEST: ${text}`
+  const r = refs.length
+    ? `\n\nREFERENCE MODELS from the Kinex library: proven designs for similar requests. Reuse their structure and proportions where they fit, then make yours cleaner and better: fix anything odd, add the details that make it recognizable, and use harmonious colors. Match the REQUEST exactly; references are guidance, not the answer.\n${refs
+        .map((x, i) => `REFERENCE ${i + 1}: "${x.text.slice(0, 220)}"\n${x.lines.join('\n')}`)
+        .join('\n\n')}`
+    : ''
+  return `CURRENT SCENE:\n${JSON.stringify(scene)}${f}${r}\n\nREQUEST: ${text}`
 }
 
 export const REFINE_PROMPT = `You add fine detail to an existing 3D object built from primitive parts. The person is inspecting it up close, so every small feature matters.

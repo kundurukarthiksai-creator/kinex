@@ -4,7 +4,8 @@ import { current, run, undo as undoModel, showAll } from '../model/current.js'
 import { describeModel } from '../model/manifest.js'
 import { augmentSelect } from '../model/remodel.js'
 import { offlinePlan } from './fallback.js'
-import { applyActions, streamSpawns, streamEdits, streamDetail, resolveTarget, MAX_DETAILED_PARTS } from './apply.js'
+import { applyActions, streamSpawns, streamEdits, streamDetail, resolveTarget, buildObject, MAX_DETAILED_PARTS } from './apply.js'
+import { findReferences, saveLiked, voteOn } from './library.js'
 import { toActions } from './schema.js'
 import { enterInspect, exitInspect, snapView, rotateModel, resetModelRotation } from '../lib/viewer.js'
 import { captureFrame } from '../lib/captureFrame.js'
@@ -151,29 +152,61 @@ export async function runCommand(raw) {
   const live = new Map()
   const edits = new Map()
   const show = progress(replyId)
+  let refs = []
+  let draftId = null
+  const dropDraft = () => {
+    if (draftId) useKinex.getState().removeObject(draftId, false)
+    draftId = null
+  }
   try {
-    if (!hasLLM) throw new Error('no key')
     // Naming a model ("make the castle taller") makes it the one being worked on.
     const named = [...st.objects].sort((a, b) => b.name.length - a.name.length).find((o) => text.toLowerCase().includes(o.name.toLowerCase()))
     if (named && !st.inspectId) st.set({ lastId: named.id })
     const current = describeFocus()
     const focus = current && !isNewThing(text, current.name) ? current : null
+
+    // New model: start from proven designs in the library. A close match shows up
+    // instantly as a draft, and the AI's version replaces it as it streams in.
+    if (!focus) {
+      st.editMessage(replyId, { text: 'Looking for similar models…' })
+      refs = await findReferences(text, 3)
+      const best = refs[0]
+      if (best && best.similarity >= DRAFT_MATCH) {
+        const obj = buildObject({ name: best.name || 'model', position: [0, 0, 0], parts: best.lines }, st.objects)
+        obj.draft = true
+        draftId = obj.id
+        st.addObject(obj)
+      }
+      st.editMessage(replyId, { text: refs.length ? `Building from ${refs.length} similar models…` : 'Building…' })
+    }
+    if (!hasLLM) throw new Error('no model')
     const plan = await planFromText(
       text,
       describeScene(),
       (p) => {
         const a = streamSpawns(p, live)
         const b = streamEdits(p, edits, focus?.id)
+        if (a && draftId) dropDraft()
         show(live, edits)
         return a || b
       },
-      { focus, history: earlier },
+      // A new model starts fresh: earlier turns only help when editing the one in focus.
+      { focus, history: focus ? earlier : [], refs },
     )
+    if (live.size) dropDraft()
     finish(plan, '', live, { text }, replyId, edits, focus?.id, startedAt)
+    tagBuild(replyId, text, live, refs)
   } catch (err) {
-    console.warn('[kinex] model failed, using offline builder:', err)
-    const why = hasLLM ? "The AI didn't answer, so the offline builder took over." : 'No OPENAI_API_KEY in .env, so the offline builder took over.'
-    finish(offlinePlan(text), why, undefined, undefined, replyId)
+    console.warn('[kinex] model failed:', err)
+    if (draftId && useKinex.getState().objects.some((o) => o.id === draftId)) {
+      // The AI didn't answer, but the library had a close match: keep it.
+      st.editMessage(replyId, { text: `The AI didn't answer, so here is the closest model from the library: "${refs[0].text.slice(0, 90)}".`, status: 'done', notes: ['From the library'] })
+      st.setStatus('done')
+      tagBuild(replyId, text, new Map([[0, { id: draftId }]]), refs)
+    } else {
+      const why = hasLLM ? "The AI didn't answer, so the offline builder took over." : 'No AI model is available (start Ollama or add OPENAI_API_KEY), so the offline builder took over.'
+      finish(offlinePlan(text), why, undefined, undefined, replyId)
+    }
   } finally {
     busy--
     if (!busy && useKinex.getState().status.kind === 'thinking') st.setStatus('idle')
@@ -365,5 +398,32 @@ async function remodelCommand(text, earlier) {
     console.warn('[kinex] remodel failed', err)
     st.editMessage(replyId, { text: "The AI didn't answer. Try again in a moment.", status: 'error' })
     st.setStatus('error', "The AI didn't answer.")
+  }
+}
+
+// How close a library model must be to show it instantly as a draft (cosine similarity).
+const DRAFT_MATCH = 0.65 // embeddinggemma cosine; "desk lamp" vs "table lamp" ~0.68
+
+// Marks a build reply so the chat can offer 👍 (save to the library) and 👎.
+function tagBuild(replyId, text, live, refs) {
+  const ids = [...live.values()].map((e) => e.id)
+  if (!ids.length) return
+  useKinex.getState().editMessage(replyId, { build: { text, objectId: ids[0], refIds: refs.map((r) => r.id), refs: refs.map((r) => r.text.slice(0, 80)) } })
+}
+
+// 👍 saves the model to the shared library so similar requests start from it; 👎 lowers
+// the references it was built from, so weaker designs stop surfacing.
+export async function rateBuild(messageId, liked) {
+  const st = useKinex.getState()
+  const msg = st.chat.find((m) => m.id === messageId)
+  if (!msg?.build) return
+  const obj = st.objects.find((o) => o.id === msg.build.objectId)
+  st.editMessage(messageId, { rated: liked ? 'up' : 'down' })
+  try {
+    if (liked && obj) await saveLiked({ text: msg.build.text, name: obj.name, parts: obj.parts })
+    await voteOn(msg.build.refIds, liked ? 1 : -1)
+  } catch (err) {
+    console.warn('[kinex] could not save the rating', err)
+    st.editMessage(messageId, { rated: null })
   }
 }
